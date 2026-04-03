@@ -1,0 +1,65 @@
+{
+    "name": "@better-agent/shared",
+    "version": "0.0.1",
+    "description": "Shared utilities for Better Agent",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/better-agent/better-agent.git",
+        "directory": "packages/shared"
+    },
+    "homepage": "https://github.com/better-agent/better-agent/tree/main/packages/shared",
+    "bugs": {
+        "url": "https://github.com/better-agent/better-agent/issues"
+    },
+    "type": "module",
+    "types": "./dist/errors.d.mts",
+    "sideEffects": false,
+    "exports": {
+        "./neverthrow": {
+            "types": "./dist/neverthrow.d.mts",
+            "import": "./dist/neverthrow.mjs"
+        },
+        "./errors": {
+            "types": "./dist/errors.d.mts",
+            "import": "./dist/errors.mjs"
+        },
+        "./logger": {
+            "types": "./dist/logger.d.mts",
+            "import": "./dist/logger.mjs"
+        },
+        "./utils": {
+            "types": "./dist/utils.d.mts",
+            "import": "./dist/utils.mjs"
+        }
+    },
+    "typesVersions": {
+        "*": {
+            "neverthrow": ["dist/neverthrow.d.mts"],
+            "errors": ["dist/errors.d.mts"],
+            "logger": ["dist/logger.d.mts"],
+            "utils": ["dist/utils.d.mts"]
+        }
+    },
+    "scripts": {
+        "build": "bunx tsdown",
+        "dev": "bunx tsdown --watch --no-clean",
+        "lint:package": "bunx publint run --strict",
+        "lint:types": "npm_config_cache=../../.npm-cache bunx attw --profile esm-only --pack .",
+        "lint": "bunx biome check .",
+        "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+        "format": "bunx biome format --write .",
+        "clean": "bunx rimraf dist"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "files": ["dist"],
+    "dependencies": {
+        "neverthrow": "^8.2.0"
+    },
+    "devDependencies": {
+        "@types/bun": "^1.2.18",
+        "@types/node": "^22.15.30"
+    }
+}

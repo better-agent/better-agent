@@ -1,0 +1,107 @@
+---
+title: Build a Structured Extraction Pipeline
+description: Turn free-form text into typed structured data.
+---
+
+Build a small pipeline that turns an incoming support message into typed structured data.
+
+## Define the agent
+
+Start with one agent and give it an output schema.
+
+```ts title="server.ts"
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { createOpenAI } from "@better-agent/providers/openai";
+import { z } from "zod";
+
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const triageAgent = defineAgent({
+  name: "triageAgent",
+  model: openai.text("gpt-5-mini"),
+  instruction: `
+    Classify the support message and return a short summary.
+    Choose the best category and priority from the schema.
+  `,
+  outputSchema: {
+    schema: z.object({
+      category: z.enum(["billing", "technical", "account", "general"]),
+      priority: z.enum(["low", "medium", "high"]),
+      summary: z.string(),
+      needsEscalation: z.boolean(),
+    }),
+  },
+});
+
+const app = betterAgent({
+  agents: [triageAgent],
+  baseURL: "/api",
+  secret: "dev-secret",
+});
+
+export default app;
+```
+
+## Create the client
+
+```ts title="client.ts"
+import { createClient } from "@better-agent/client";
+import type app from "./server";
+
+export const client = createClient<typeof app>({
+  baseURL: "/api",
+  secret: "dev-secret",
+});
+```
+
+## Build the form
+
+Extraction usually fits a simple request and result flow, so this example uses `client.run(...)` directly.
+
+```tsx title="Page.tsx"
+import { useState } from "react";
+import { client } from "./client";
+
+export function Page() {
+  const [input, setInput] = useState("");
+  const [result, setResult] = useState<null | {
+    category: "billing" | "technical" | "account" | "general";
+    priority: "low" | "medium" | "high";
+    summary: string;
+    needsEscalation: boolean;
+  }>(null);
+  const [loading, setLoading] = useState(false);
+
+  return (
+    <div>
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!input.trim()) return;
+
+          setLoading(true);
+          try {
+            const result = await client.run("triageAgent", {
+              input,
+            });
+            setResult(result.structured);
+          } finally {
+            setLoading(false);
+          }
+        }}
+      >
+        <textarea value={input} onChange={(event) => setInput(event.target.value)} />
+        <button type="submit">{loading ? "Running..." : "Extract"}</button>
+      </form>
+
+      {result ? (
+        <pre>{JSON.stringify(result, null, 2)}</pre>
+      ) : null}
+    </div>
+  );
+}
+```
+
+This same pattern works for support tickets, forms, CRM notes, and other unstructured text.

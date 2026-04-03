@@ -1,0 +1,49 @@
+name: Package Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+      - canary
+
+permissions:
+  contents: read
+
+jobs:
+  package-lint:
+    name: package-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: setup-bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version: 1.3.3
+
+      - name: install
+        run: bun install --frozen-lockfile
+
+      - name: package-lint
+        run: bun run lint:packages
+
+  type-lint:
+    name: type-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: setup-bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version: 1.3.3
+
+      - name: install
+        run: bun install --frozen-lockfile
+
+      - name: type-lint
+        run: bun run lint:types

@@ -1,0 +1,227 @@
+---
+title: Errors
+description: Understand Better Agent error codes, shapes, and recovery.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Better Agent uses `BetterAgentError` as the standard error type across the framework. It carries a stable `code` for programmatic handling.
+
+## Error Shape
+
+### Server
+
+`BetterAgentError` extends `Error` and adds structured fields.
+
+```ts title="server.ts"
+import { BetterAgentError } from "@better-agent/shared/errors";
+
+try {
+  const result = await app.run("assistant", { input: "Hello" });
+} catch (error) {
+  if (error instanceof BetterAgentError) {
+    console.log(error.code);
+    console.log(error.message);
+    console.log(error.status);
+    console.log(error.retryable);
+    console.log(error.context);
+  }
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `code` | `string` | Stable error code, such as `"VALIDATION_FAILED"`. |
+| `message` | `string` | Human-readable error message. |
+| `status` | `number` | HTTP status code. |
+| `title` | `string` | Short title, such as `"Unprocessable Entity"`. |
+| `type` | `string` | Docs URL for the error code. |
+| `retryable` | `boolean` | Whether retrying may help. |
+| `context` | `Record<string, unknown>` | Structured metadata about what failed. |
+| `issues` | `unknown[]` | Validation issues when multiple things failed. |
+| `trace` | `{ at: string; data?: Record<string, unknown> }[]` | Internal trace frames showing where the error was observed or enriched. |
+| `traceId` | `string` | Distributed tracing id when available. |
+
+Use `toProblem()` to serialize to RFC 7807 format, or `toDebugJSON()` to include the stack trace and cause for development logging.
+
+```ts title="server.ts"
+catch (error) {
+  if (error instanceof BetterAgentError) {
+    const problem = error.toProblem();
+    console.error(error.toDebugJSON());
+  }
+}
+```
+
+### Client
+
+On the client side, errors are normalized into `AgentClientError`, the same fields plus a `raw` field holding the original thrown value.
+
+```ts title="client.ts"
+import { toAgentClientError } from "@better-agent/client";
+
+try {
+  await client.run("assistant", { input: "Hello" });
+} catch (error) {
+  const clientError = toAgentClientError(error);
+  console.log(clientError.code);
+  console.log(clientError.message);
+  console.log(clientError.retryable);
+  console.log(clientError.raw);
+}
+```
+
+The client parses error responses from the server automatically. JSON bodies with `code`, `detail`, `status`, `retryable`, `context`, `issues`, and `trace` fields are all preserved.
+
+## Error Codes
+
+<h3 id="bad-request"><code>BAD_REQUEST</code></h3>
+
+The request is malformed or missing required input.
+
+- **Status:** `400`
+- **Retryable:** `false`
+- **Usually means:** the request body is missing something required, the API call shape is wrong, or the input cannot be understood as sent.
+- **Usually fix by:** checking the input you passed to `run`, `stream`, or an API endpoint.
+
+<h3 id="validation-failed"><code>VALIDATION_FAILED</code></h3>
+
+The input was received but rejected as invalid for the expected schema or configuration.
+
+- **Status:** `422`
+- **Retryable:** `false`
+- **Usually means:** schema validation failed, an agent or tool config is invalid, a duplicate name was found, or an unsupported option was used.
+- **Usually fix by:** checking `context` and `issues` for the failing field, then comparing your config to the docs.
+
+<h3 id="not-found"><code>NOT_FOUND</code></h3>
+
+A referenced resource does not exist.
+
+- **Status:** `404`
+- **Retryable:** `false`
+- **Usually means:** an agent name is not registered, a run id does not match an active run, or a pending tool call was not found.
+- **Usually fix by:** checking names, ids, and referenced resources.
+
+<h3 id="conflict"><code>CONFLICT</code></h3>
+
+A concurrent modification was detected.
+
+- **Status:** `409`
+- **Retryable:** `false`
+- **Usually means:** a conversation was updated by another request between load and save. The `expectedCursor` in the conversation store did not match.
+- **Usually fix by:** reloading the conversation and retrying the operation, or implementing conflict resolution in your store.
+
+<h3 id="rate-limited"><code>RATE_LIMITED</code></h3>
+
+The request exceeded a configured rate limit.
+
+- **Status:** `429`
+- **Retryable:** `true`
+- **Usually means:** a plugin or provider blocked the request for exceeding the allowed request volume.
+- **Usually fix by:** waiting and retrying, reducing request volume, or adjusting your rate limit config.
+
+<h3 id="timeout"><code>TIMEOUT</code></h3>
+
+An operation took too long.
+
+- **Status:** `504`
+- **Retryable:** `true`
+- **Usually means:** an upstream service did not respond in time, a tool approval expired, or a client tool result was not submitted before the deadline.
+- **Usually fix by:** retrying, checking the upstream dependency, or increasing the relevant timeout.
+
+<h3 id="aborted"><code>ABORTED</code></h3>
+
+The run was cancelled.
+
+- **Status:** `499`
+- **Retryable:** `false`
+- **Usually means:** the client disconnected, `abortRun()` was called, or an abort signal was triggered.
+- **Usually fix by:** checking whether the cancellation was expected. Retry only if the abort was accidental.
+
+<h3 id="upstream-failed"><code>UPSTREAM_FAILED</code></h3>
+
+An external dependency failed.
+
+- **Status:** `502`
+- **Retryable:** `true`
+- **Usually means:** a model provider returned an error, an MCP server failed, or a network request to an external service failed.
+- **Usually fix by:** retrying if the failure looks temporary, checking provider status, or verifying credentials and network access.
+
+<h3 id="internal"><code>INTERNAL</code></h3>
+
+An unexpected failure occurred.
+
+- **Status:** `500`
+- **Retryable:** `false`
+- **Usually means:** an uncaught exception, an unexpected runtime state, or an unknown error wrapped into a `BetterAgentError`.
+- **Usually fix by:** reading `detail` and `context`, checking logs, and treating it as a bug if the input was expected to work.
+
+## Creating Errors
+
+Use these methods in plugins, custom stores, or application code.
+
+### fromCode
+
+Create an error from a code and message.
+
+```ts title="plugins.ts"
+import { BetterAgentError } from "@better-agent/shared/errors";
+
+throw BetterAgentError.fromCode("VALIDATION_FAILED", "Workspace id is required.", {
+  context: { field: "workspaceId" },
+});
+```
+
+### wrap
+
+Wrap an unknown error into a `BetterAgentError`. Preserves the original error as `cause`.
+
+```ts title="stores.ts"
+try {
+  await db.save(items);
+} catch (error) {
+  throw BetterAgentError.wrap({
+    err: error,
+    message: "Failed to save conversation",
+    opts: { code: "INTERNAL", context: { conversationId } },
+  });
+}
+```
+
+When wrapping an existing `BetterAgentError`, context is merged, with wrapper values overriding on key collisions, and trace frames are concatenated.
+
+### fromProblem
+
+Rehydrate an error from a serialized RFC 7807 problem details payload.
+
+```ts title="client.ts"
+const problem = await response.json();
+const error = BetterAgentError.fromProblem(problem);
+```
+
+## Custom Error Codes
+
+Any string is accepted as an error code. Custom codes follow the same shape and serialization as built-in codes.
+
+```ts title="plugins.ts"
+throw BetterAgentError.fromCode("WORKSPACE_SUSPENDED", "This workspace is suspended.", {
+  status: 403,
+  retryable: false,
+  context: { workspaceId: "ws_123" },
+});
+```
+
+Custom codes default to status `500` and `retryable: false` unless you override them. The docs URL slug is derived from the code name, for example `WORKSPACE_SUSPENDED` becomes `workspace-suspended`.
+
+## Retryable vs Non-Retryable
+
+The `retryable` flag is a hint:
+
+- **`true`**: retrying may help, especially for `RATE_LIMITED`, `TIMEOUT`, and `UPSTREAM_FAILED`
+- **`false`**: the request or configuration needs to change before retrying will help
+
+It is a guide, not a guarantee. Some upstream failures are permanent until you fix configuration or credentials.
+
+<Callout type="info">
+Start with `code`, then read `message`, then check `context` for the exact field or dependency that caused the failure. Use `issues` when the error contains multiple validation problems.
+</Callout>

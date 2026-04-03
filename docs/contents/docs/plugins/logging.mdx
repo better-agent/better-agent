@@ -1,0 +1,81 @@
+---
+title: Logging
+description: Structured runtime logging plugin with filtering, redaction, and custom formatting.
+---
+
+Logging emits structured runtime logs for requests, events, model calls, tools, and saves.
+
+By default it logs to the console and never affects request execution.
+
+## Basic Usage
+
+```ts
+import { loggingPlugin } from "@better-agent/plugins";
+
+const plugin = loggingPlugin();
+```
+
+This logs requests, events, steps, model calls, tool calls, and errors.
+
+Save logs are off by default.
+
+## Custom Logger
+
+Use `logger` to send entries to your own logging system.
+
+```ts
+const plugin = loggingPlugin({
+  logger: {
+    info: (entry) => myLogger.info(entry),
+    error: (entry) => myLogger.error(entry),
+  },
+});
+```
+
+## Include Only What You Need
+
+Use `include` to reduce noise and log only the groups you care about.
+
+```ts
+const plugin = loggingPlugin({
+  include: {
+    requests: true,
+    toolCalls: true,
+    modelCalls: false,
+    saves: false,
+  },
+});
+```
+
+## Redact Sensitive Data
+
+Sensitive headers like `authorization`, `cookie`, `set-cookie`, and `x-api-key` are redacted by default.
+
+Use `redactHeaders` to add more header names, or `redactBody` to rewrite logged bodies.
+
+```ts
+const plugin = loggingPlugin({
+  redactHeaders: ["x-session-token"],
+  redactBody: ({ phase, body }) =>
+    phase === "tool_args" ? { redacted: true } : body,
+});
+```
+
+## Format Output
+
+Use `format` to shape each log entry before it is written.
+
+```ts
+const plugin = loggingPlugin({
+  format: (entry) => `[${entry.level}] ${entry.event}`,
+});
+```
+
+## Log Levels
+
+Log levels are `debug`, `info`, `warn`, and `error`.
+
+The default level is `info`.
+
+Use `level: "debug"` to include debug-only entries like model calls and save logs.
+

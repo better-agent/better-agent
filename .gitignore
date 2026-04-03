@@ -1,0 +1,22 @@
+# deps
+node_modules/
+
+# build outputs
+dist/
+.types/
+coverage/
+
+# turbo
+.turbo/
+
+# caches
+*.tsbuildinfo
+.attest/
+**/.attest/
+.npm-cache/
+.DS_Store
+
+# env files
+.env
+.env.*
+!.env.example

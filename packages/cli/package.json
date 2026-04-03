@@ -1,0 +1,56 @@
+{
+    "name": "@better-agent/cli",
+    "version": "0.0.1",
+    "description": "Better Agent CLI",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/better-agent/better-agent.git",
+        "directory": "packages/cli"
+    },
+    "homepage": "https://github.com/better-agent/better-agent/tree/main/packages/cli",
+    "bugs": {
+        "url": "https://github.com/better-agent/better-agent/issues"
+    },
+    "type": "module",
+    "types": "./dist/index.d.mts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.mts",
+            "import": "./dist/index.mjs",
+            "default": "./dist/index.mjs"
+        }
+    },
+    "bin": {
+        "better-agent": "./dist/index.mjs"
+    },
+    "scripts": {
+        "build": "bunx tsdown",
+        "dev": "bunx tsdown --watch --no-clean",
+        "lint:package": "bunx publint run --strict",
+        "lint:types": "npm_config_cache=../../.npm-cache bunx attw --profile esm-only --pack .",
+        "lint": "bunx biome check .",
+        "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+        "format": "bunx biome format --write .",
+        "clean": "bunx rimraf dist"
+    },
+    "publishConfig": {
+        "access": "public",
+        "executableFiles": ["./dist/index.mjs"]
+    },
+    "dependencies": {
+        "@better-agent/shared": "workspace:*",
+        "@better-agent/core": "workspace:*",
+        "chalk": "^5.6.2",
+        "commander": "^14.0.3",
+        "jiti": "^2.6.1",
+        "prompts": "^2.4.2",
+        "typescript": "^5.6.3"
+    },
+    "devDependencies": {
+        "@types/bun": "^1.2.18",
+        "@types/node": "^22.15.30",
+        "@types/prompts": "^2.4.9"
+    },
+    "files": ["dist"]
+}

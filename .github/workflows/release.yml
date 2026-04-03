@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    if: github.repository == 'better-agent/better-agent'
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 0
+
+      - name: setup-bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version: 1.3.3
+
+      - name: setup-node
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org/
+
+      - name: generate github release notes
+        continue-on-error: true
+        run: npx changelogithub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: install
+        run: bun install --frozen-lockfile
+
+      - name: build
+        run: bun run build
+
+      - name: determine npm tag
+        id: determine_npm_tag
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG" =~ -(next|canary|beta|rc) ]]; then
+            NPM_TAG="${BASH_REMATCH[1]}"
+          else
+            git fetch origin main
+            CURRENT_BRANCH="$(git branch -r --contains "$GITHUB_SHA" | grep -E 'origin/main$' | head -1 | sed 's/.*origin\///')"
+
+            if [[ "$CURRENT_BRANCH" == "main" ]]; then
+              NPM_TAG="latest"
+            else
+              echo "The tagged commit is not on the main branch."
+              echo "::error ::Releases with the 'latest' npm tag must be cut from main."
+              exit 1
+            fi
+          fi
+
+          echo "npm_tag=${NPM_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Using npm tag: ${NPM_TAG}"
+
+      - name: publish shared
+        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
+        working-directory: ./packages/shared
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: publish core
+        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
+        working-directory: ./packages/core
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: publish adapters
+        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
+        working-directory: ./packages/adapters
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: publish client
+        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
+        working-directory: ./packages/client
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: publish providers
+        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
+        working-directory: ./packages/providers
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: publish plugins
+        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
+        working-directory: ./packages/plugins
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: publish cli
+        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
+        working-directory: ./packages/cli
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: publish create
+        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
+        working-directory: ./packages/create
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true

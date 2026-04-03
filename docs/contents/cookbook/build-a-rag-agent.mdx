@@ -1,0 +1,209 @@
+---
+title: Build a RAG Chat
+description: Build a chat app that retrieves context before answering.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Build a chat app that retrieves relevant context before answering. In Better Agent, retrieval is just a tool, so the pattern stays typed and works with your existing stack.
+
+## Define the retrieval tool
+
+Keep retrieval as a normal server tool. The tool can call any search layer you already use, like a vector database, SQL query, or internal docs index.
+
+```ts title="tools.ts"
+import { defineTool } from "@better-agent/core";
+import { z } from "zod";
+
+export const searchDocs = defineTool({
+  name: "search_docs",
+  description: "Search the knowledge base for relevant documentation chunks.",
+  schema: z.object({
+    query: z.string(),
+  }),
+}).server(async ({ query }) => {
+  const matches = await searchKnowledgeBase(query);
+
+  return matches.map((match) => ({
+    title: match.title,
+    content: match.content,
+    source: match.source,
+  }));
+});
+```
+
+## Define the agent
+
+The agent decides when to call the tool. Keep the instruction direct: retrieve context for factual questions, answer from the retrieved results, and say when the answer is not in the knowledge base.
+
+```ts title="server.ts"
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { createOpenAI } from "@better-agent/providers/openai";
+import { searchDocs } from "./tools";
+
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const assistant = defineAgent({
+  name: "assistant",
+  model: openai.text("gpt-5-mini"),
+  instruction: `
+    You answer questions about the product docs.
+    Search the docs before answering factual questions.
+    Use retrieved context in your answer.
+    If the docs do not contain the answer, say that clearly.
+  `,
+  tools: [searchDocs],
+});
+
+const app = betterAgent({
+  agents: [assistant],
+  baseURL: "/api",
+  secret: "dev-secret",
+});
+
+export default app;
+```
+
+## Create the client
+
+```ts title="client.ts"
+import { createClient } from "@better-agent/client";
+import type app from "./server";
+
+export const client = createClient<typeof app>({
+  baseURL: "/api",
+  secret: "dev-secret",
+});
+```
+
+## Build the chat
+
+Use the normal Better Agent client hook for your framework. This example uses React, but the server pattern stays the same everywhere.
+
+```tsx title="Chat.tsx"
+import { useState } from "react";
+import { useAgent } from "@better-agent/client/react";
+import { client } from "./client";
+
+export function Chat() {
+  const [input, setInput] = useState("");
+  const { messages, status, sendMessage } = useAgent(client, {
+    agent: "assistant",
+  });
+
+  return (
+    <div>
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!input.trim()) return;
+          await sendMessage({ input });
+          setInput("");
+        }}
+      >
+        <input value={input} onChange={(event) => setInput(event.target.value)} />
+        <button type="submit">Send</button>
+      </form>
+
+      <p>Status: {status}</p>
+
+      <ul>
+        {messages.map((message) => (
+          <li key={message.localId}>
+            {message.role}:{" "}
+            {message.parts.map((part) => (part.type === "text" ? part.text : "")).join("")}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+## Optional: return citations
+
+If you want typed citations, add an output schema to the agent.
+
+```ts title="server.ts"
+import { z } from "zod";
+
+const assistant = defineAgent({
+  name: "assistant",
+  model: openai.text("gpt-5-mini"),
+  instruction: "Answer from retrieved docs and include supporting sources.",
+  tools: [searchDocs],
+  outputSchema: {
+    schema: z.object({
+      answer: z.string(),
+      citations: z.array(z.string()),
+    }),
+  },
+});
+```
+
+Then read the typed result on the client and attach the citations to the final assistant message.
+
+```tsx title="Chat.tsx"
+import { useState } from "react";
+import { useAgent } from "@better-agent/client/react";
+import { client } from "./client";
+
+export function Chat() {
+  const [input, setInput] = useState("");
+  const [citationsByMessage, setCitationsByMessage] = useState<Record<string, string[]>>({});
+  const { messages, status, sendMessage } = useAgent(client, {
+    agent: "assistant",
+    onFinish: ({ messages, structured }) => {
+      const lastAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant");
+      if (!lastAssistantMessage) return;
+
+      setCitationsByMessage((current) => ({
+        ...current,
+        [lastAssistantMessage.localId]: structured?.citations ?? [],
+      }));
+    },
+  });
+
+  const getText = (message: (typeof messages)[number]) =>
+    message.parts.map((part) => (part.type === "text" ? part.text : "")).join("");
+
+  return (
+    <div>
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!input.trim()) return;
+          await sendMessage({ input });
+          setInput("");
+        }}
+      >
+        <input value={input} onChange={(event) => setInput(event.target.value)} />
+        <button type="submit">Send</button>
+      </form>
+
+      <p>Status: {status}</p>
+
+      <ul>
+        {messages.map((message) => (
+          <li key={message.localId}>
+            {message.role}: {getText(message)}
+            {citationsByMessage[message.localId]?.length ? (
+              <ul>
+                {citationsByMessage[message.localId].map((citation) => (
+                  <li key={citation}>{citation}</li>
+                ))}
+              </ul>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+<Callout type="info">
+This pattern stays the same whether your retrieval layer is a vector database, SQL query, or an internal docs index.
+</Callout>

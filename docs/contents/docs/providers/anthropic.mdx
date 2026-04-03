@@ -1,0 +1,59 @@
+---
+title: Anthropic
+---
+
+Use Anthropic with Better Agent by creating the provider and choosing a model.
+
+## Quick Start
+
+```ts
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { createAnthropic } from "@better-agent/providers/anthropic";
+
+const anthropic = createAnthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+const assistant = defineAgent({
+  name: "assistant",
+  model: anthropic.text("claude-sonnet-4-5"),
+  instruction: "You are a concise assistant. Keep replies short and natural.",
+});
+
+const app = betterAgent({
+  agents: [assistant],
+});
+```
+
+## Model Helpers
+
+Use the helper that matches the kind of model you want:
+
+| Helper | Use it for |
+|--------|-------------|
+| `anthropic.text(...)` | Anthropic text and multimodal response models |
+| `anthropic.model(...)` | Any Anthropic model id when you already know the exact model |
+
+## Anthropic Model Options
+
+```ts
+const assistant = defineAgent({
+  name: "assistant",
+  model: anthropic.text("claude-sonnet-4-5"),
+  defaultModelOptions: {
+    maxTokens: 1024,
+  },
+});
+```
+
+## Hosted Tools
+
+```ts
+const assistant = defineAgent({
+  name: "assistant",
+  model: anthropic.text("claude-sonnet-4-5"),
+  tools: [
+    anthropic.tools.webSearch_20260209({}),
+  ],
+});
+```

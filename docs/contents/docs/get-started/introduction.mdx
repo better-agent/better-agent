@@ -1,0 +1,92 @@
+---
+title: Introduction
+---
+
+<div className="not-prose intro-opening">
+  <div className="intro-opening-body">
+    Better Agent is a TypeScript framework for building typed, event-driven, framework-agnostic agent apps.
+  </div>
+</div>
+
+## Why It Exists
+
+1. Agent apps should be typed end-to-end, from definitions to client calls.
+2. The framework should fit into your existing stack, including your application, database, and auth.
+3. Reusable behavior should be easy to package and share as plugins.
+4. Durable conversations and resumable runs should be easy to build with first-class persistence support.
+
+## Features
+
+<div className="not-prose intro-section-frame">
+  <div className="intro-features-grid">
+    <div className="intro-feature-card">
+      <div className="intro-feature-header">
+        <span className="intro-feature-index">01</span>
+        <span className="intro-feature-kicker">Typed Agents</span>
+      </div>
+      <span className="intro-feature-body">Define an agent once and keep its model, tools, context, and output schema typed together.</span>
+    </div>
+    <div className="intro-feature-card">
+      <div className="intro-feature-header">
+        <span className="intro-feature-index">02</span>
+        <span className="intro-feature-kicker">Type-Safe Client</span>
+      </div>
+      <span className="intro-feature-body">Infer agent names, inputs, outputs, and hooks directly from your server app.</span>
+    </div>
+    <div className="intro-feature-card">
+      <div className="intro-feature-header">
+        <span className="intro-feature-index">03</span>
+        <span className="intro-feature-kicker">Multi-Provider</span>
+      </div>
+      <span className="intro-feature-body">Use the same app shape across supported providers instead of rewriting your runtime for each one.</span>
+    </div>
+    <div className="intro-feature-card">
+      <div className="intro-feature-header">
+        <span className="intro-feature-index">04</span>
+        <span className="intro-feature-kicker">Plugins</span>
+      </div>
+      <span className="intro-feature-body">Add guards, lifecycle hooks, middleware, and custom endpoints without rebuilding the core loop.</span>
+    </div>
+    <div className="intro-feature-card">
+      <div className="intro-feature-header">
+        <span className="intro-feature-index">05</span>
+        <span className="intro-feature-kicker">Framework Agnostic</span>
+      </div>
+      <span className="intro-feature-body">Mount Better Agent in the server stack you already use instead of adopting a fixed app framework.</span>
+    </div>
+    <div className="intro-feature-card">
+      <div className="intro-feature-header">
+        <span className="intro-feature-index">06</span>
+        <span className="intro-feature-kicker">Event Driven</span>
+      </div>
+      <span className="intro-feature-body">Listen to structured events for messages, tool calls, approvals, and streaming state as runs progress.</span>
+    </div>
+    <div className="intro-feature-card">
+      <div className="intro-feature-header">
+        <span className="intro-feature-index">07</span>
+        <span className="intro-feature-kicker">Durable Runs</span>
+      </div>
+      <span className="intro-feature-body">Add minimal persistence stores when you need resumable conversations, replayable streams, or active run tracking.</span>
+    </div>
+    <div className="intro-feature-card">
+      <div className="intro-feature-header">
+        <span className="intro-feature-index">08</span>
+        <span className="intro-feature-kicker">Human in the Loop</span>
+      </div>
+      <span className="intro-feature-body">Pause sensitive tool calls for approval and continue the run after a user decision.</span>
+    </div>
+    <div className="intro-feature-card">
+      <div className="intro-feature-header">
+        <span className="intro-feature-index">09</span>
+        <span className="intro-feature-kicker">Structured Output</span>
+      </div>
+      <span className="intro-feature-body">Validate responses against a schema and get typed data back from the run result.</span>
+    </div>
+  </div>
+</div>
+
+## Where To Go Next
+
+- [Installation](/docs/get-started/installation) to set up the packages and first app.
+- [Usage](/docs/get-started/usage) to add a typed client and UI.
+- [Concepts](/docs/concepts/agent) to understand how the core pieces fit together.

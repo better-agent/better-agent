@@ -1,0 +1,409 @@
+---
+title: TanStack Start
+description: Build Better Agent apps in TanStack Start.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Build a Better Agent app in TanStack Start with a typed client, `useAgent(...)`, durable conversations, approvals, client tools, and stream recovery.
+
+## Create the app
+
+Start with a normal Better Agent server module.
+
+```ts title="src/better-agent/server.ts"
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { createOpenAI } from "@better-agent/providers/openai";
+
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const assistant = defineAgent({
+  name: "assistant",
+  model: openai.text("gpt-5-mini"),
+  instruction: "You are a concise assistant. Keep replies short and natural.",
+});
+
+const app = betterAgent({
+  agents: [assistant],
+  baseURL: "/agents",
+  secret: "dev-secret",
+});
+
+export default app;
+```
+
+## Mount the route
+
+Create a TanStack Start file route and forward the request to Better Agent.
+
+```tsx title="src/routes/agents/$.tsx"
+import { createFileRoute } from "@tanstack/react-router";
+import app from "../../better-agent/server";
+
+export const Route = createFileRoute("/agents/$")({
+  server: {
+    handlers: {
+      GET: ({ request }) => app.handler(request),
+      POST: ({ request }) => app.handler(request),
+      PUT: ({ request }) => app.handler(request),
+      PATCH: ({ request }) => app.handler(request),
+      DELETE: ({ request }) => app.handler(request),
+      OPTIONS: ({ request }) => app.handler(request),
+      HEAD: ({ request }) => app.handler(request),
+    },
+  },
+});
+```
+
+<Callout type="info">
+  Keep `baseURL` and the route path aligned. If the app uses `baseURL: "/agents"`, the route should handle `/agents`.
+</Callout>
+
+## Create the typed client
+
+Import the server app type so agent names, context, tools, and output stay aligned.
+
+```ts title="src/better-agent/client.ts"
+import { createClient } from "@better-agent/client";
+import type app from "./server";
+
+export const client = createClient<typeof app>({
+  baseURL: "/agents",
+  secret: "dev-secret",
+});
+```
+
+## Build a basic chat
+
+Start with the normal chat loop: `messages`, `status`, `error`, `sendMessage`, and `stop`.
+
+```tsx title="src/routes/index.tsx"
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { useAgent } from "@better-agent/client/react";
+import { client } from "../better-agent/client";
+
+export const Route = createFileRoute("/")({
+  component: ChatPage,
+});
+
+function ChatPage() {
+  const [input, setInput] = useState("");
+  const { messages, status, error, sendMessage, stop } = useAgent(client, {
+    agent: "assistant",
+  });
+
+  return (
+    <div>
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const value = input.trim();
+          if (!value) return;
+          setInput("");
+          await sendMessage(value);
+        }}
+      >
+        <input
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder="Ask something..."
+        />
+        <button type="submit" disabled={status !== "ready"}>
+          Send
+        </button>
+        <button
+          type="button"
+          onClick={() => stop()}
+          disabled={status !== "submitted" && status !== "streaming"}
+        >
+          Stop
+        </button>
+      </form>
+
+      <p>Status: {status}</p>
+      {error && <p>{error.message}</p>}
+
+      <ul>
+        {messages.map((message) => (
+          <li key={message.localId}>
+            {message.role}: {message.parts.map((part) => part.type === "text" ? part.text : "").join("")}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+## Keep one conversation across refreshes
+
+When you use server-managed persistence, give the chat a `conversationId`, hydrate the saved transcript, and resume the active stream on page load.
+
+```tsx title="src/routes/index.tsx"
+function ChatPage() {
+  const agent = useAgent(client, {
+    agent: "assistant",
+    conversationId: "support-demo",
+    hydrateFromServer: true,
+    resume: true,
+  });
+
+  return (
+    <div>
+      <p>Status: {agent.status}</p>
+      <p>Conversation: {agent.conversationId}</p>
+      <p>Messages: {agent.messages.length}</p>
+    </div>
+  );
+}
+```
+
+Use `resume: true` when you want the hook to reconnect to the active conversation stream on init. Use `resume: { streamId, afterSeq }` when you already track a stream cursor yourself.
+
+<Callout type="info">
+  For `resume: true`, Better Agent needs persistence to find the active stream for a conversation. With only a `StreamStore`, use `resume: { streamId }`. Add runtime state to enable conversation-based resume. See [Persistence](/docs/concepts/persistence).
+</Callout>
+
+## Pass context and tune a run
+
+Use hook options for stable per-chat defaults like `context`, `modelOptions`, and `delivery`.
+
+```tsx title="src/routes/billing.tsx"
+import { createFileRoute } from "@tanstack/react-router";
+import { useAgent } from "@better-agent/client/react";
+import { client } from "../better-agent/client";
+
+export const Route = createFileRoute("/billing")({
+  component: BillingPage,
+});
+
+function BillingPage() {
+  const agent = useAgent(client, {
+    agent: "assistant",
+    context: {
+      userId: "user_123",
+      plan: "pro",
+    },
+    modelOptions: {
+      reasoningEffort: "medium",
+    },
+    delivery: "stream",
+  });
+
+  return <button onClick={() => agent.sendMessage("Summarize my plan.")}>Ask</button>;
+}
+```
+
+## Add browser-side tools
+
+Register client tool handlers on the hook when the agent uses tools that should run in the browser.
+
+```tsx title="src/routes/tools.tsx"
+import { createFileRoute } from "@tanstack/react-router";
+import { useAgent } from "@better-agent/client/react";
+import { client } from "../better-agent/client";
+
+export const Route = createFileRoute("/tools")({
+  component: ToolsPage,
+});
+
+function ToolsPage() {
+  const agent = useAgent(client, {
+    agent: "assistant",
+    toolHandlers: {
+      show_confetti: async ({ color }) => {
+        console.log("Confetti color:", color);
+        return { shown: true };
+      },
+    },
+  });
+
+  return <button onClick={() => agent.sendMessage("Celebrate the upgrade.")}>Run</button>;
+}
+```
+
+Use `onToolCall` instead when you want one per-run function instead of a handler map.
+
+## Handle approvals in the UI
+
+When a tool needs human approval, `useAgent(...)` exposes pending requests and a helper to answer them.
+
+```tsx title="src/routes/approvals.tsx"
+import { createFileRoute } from "@tanstack/react-router";
+import { useAgent } from "@better-agent/client/react";
+import { client } from "../better-agent/client";
+
+export const Route = createFileRoute("/approvals")({
+  component: ApprovalsPage,
+});
+
+function ApprovalsPage() {
+  const { pendingToolApprovals, approveToolCall } = useAgent(client, {
+    agent: "assistant",
+  });
+
+  return (
+    <div>
+      {pendingToolApprovals.map((approval) => (
+        <div key={approval.toolCallId}>
+          <div>{approval.toolName}</div>
+          <pre>{JSON.stringify(approval.meta, null, 2)}</pre>
+
+          <button
+            onClick={() =>
+              approveToolCall({
+                toolCallId: approval.toolCallId,
+                decision: "approved",
+              })
+            }
+          >
+            Approve
+          </button>
+
+          <button
+            onClick={() =>
+              approveToolCall({
+                toolCallId: approval.toolCallId,
+                decision: "denied",
+              })
+            }
+          >
+            Deny
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Watch events and final results
+
+Use callbacks when you want analytics, data parts, disconnect handling, or typed final output.
+
+```tsx title="src/routes/observability.tsx"
+import { createFileRoute } from "@tanstack/react-router";
+import { useAgent } from "@better-agent/client/react";
+import { client } from "../better-agent/client";
+
+export const Route = createFileRoute("/observability")({
+  component: ObservabilityPage,
+});
+
+function ObservabilityPage() {
+  useAgent(client, {
+    agent: "assistant",
+    onResponse: (response) => {
+      console.log("HTTP status", response.status);
+    },
+    onEvent: (event) => {
+      console.log("Event", event.type);
+    },
+    onData: (part) => {
+      console.log("Data part", part.data);
+    },
+    onDisconnect: ({ error, streamId }) => {
+      console.error("Stream disconnected", streamId, error);
+    },
+    onError: (error) => {
+      console.error("Run failed", error);
+    },
+    onFinish: ({ finishReason, response }) => {
+      console.log("Finished", finishReason);
+      console.log(response?.output);
+    },
+  });
+
+  return null;
+}
+```
+
+If your agent has a default `outputSchema`, `onFinish` also receives typed `structured` output.
+
+## Shape local replay
+
+Use these options when you want to control how local message history is turned back into model input.
+
+```tsx title="src/routes/local-state.tsx"
+import { createFileRoute } from "@tanstack/react-router";
+import { useAgent } from "@better-agent/client/react";
+import { client } from "../better-agent/client";
+
+export const Route = createFileRoute("/local-state")({
+  component: LocalStatePage,
+});
+
+function LocalStatePage() {
+  const agent = useAgent(client, {
+    agent: "assistant",
+    initialMessages: [
+      {
+        role: "assistant",
+        parts: [{ type: "text", text: "Welcome back." }],
+      },
+    ],
+    prepareMessages: ({ messages, input }) => {
+      return [
+        {
+          type: "message",
+          role: "system",
+          content: `Reuse the important context from the last ${messages.length} local messages.`,
+        },
+        { type: "message", role: "user", content: [{ type: "text", text: String(input) }] },
+      ];
+    },
+  });
+
+  return (
+    <div>
+      <button onClick={() => agent.regenerate()}>Regenerate last turn</button>
+      <button
+        onClick={() =>
+          agent.setMessages((messages) => messages.filter((message) => message.role !== "assistant"))
+        }
+      >
+        Hide assistant messages
+      </button>
+    </div>
+  );
+}
+```
+
+Use `retryMessage(localId)` when you want to rerun one earlier user turn, and `resumeStream(...)` or `resumeConversation(...)` when you want to reconnect manually instead of using `resume` on init.
+
+## Optimistic UI
+
+Use optimistic insertion when you want the user message to appear in the chat before the request finishes.
+
+```tsx title="src/routes/optimistic.tsx"
+import { createFileRoute } from "@tanstack/react-router";
+import { useAgent } from "@better-agent/client/react";
+import { client } from "../better-agent/client";
+
+export const Route = createFileRoute("/optimistic")({
+  component: OptimisticPage,
+});
+
+function OptimisticPage() {
+  const agent = useAgent(client, {
+    agent: "assistant",
+    optimisticUserMessage: {
+      enabled: true,
+      onError: "remove",
+    },
+    onOptimisticUserMessageError: ({ error }) => {
+      console.error("Optimistic message failed", error);
+    },
+  });
+
+  return (
+    <div>
+      <button onClick={() => agent.clearError()}>Clear error</button>
+      <button onClick={() => agent.reset()}>Reset chat</button>
+    </div>
+  );
+}
+```

@@ -1,0 +1,342 @@
+---
+title: Persistence
+description: Store and replay conversation history across runs.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Persistence stores conversation state across runs. Use it for durable conversations, stream resumption, and active-run tracking.
+
+You can adopt the stores you need, or skip persistence entirely for stateless flows.
+
+```ts title="server.ts"
+import { betterAgent } from "@better-agent/core";
+import {
+  createMemoryConversationStore,
+  createMemoryStreamStore,
+  createMemoryConversationRuntimeStateStore,
+} from "@better-agent/core";
+
+const app = betterAgent({
+  agents: [assistantAgent],
+  persistence: {
+    conversations: createMemoryConversationStore(),
+    stream: createMemoryStreamStore(),
+    runtimeState: createMemoryConversationRuntimeStateStore(),
+  },
+});
+```
+
+Better Agent provides three store contracts:
+
+- **Conversation Store**: loads and saves the conversation timeline
+- **Stream Store**: persists emitted events for stream resumption
+- **Runtime State Store**: tracks which run is active for a conversation
+
+These are minimal contracts. You implement them on top of your existing database and schema.
+
+## Build Your Stores
+
+Start with the store you need. Each contract is small and maps cleanly to a table or collection in your existing database.
+
+## Conversation Store
+
+Use the conversation store to load and save durable `ConversationItem[]` arrays.
+
+```ts title="types.ts"
+interface ConversationStore {
+  load(params: {
+    conversationId: string;
+    agentName: string;
+  }): Promise<{
+    items: ConversationItem[];
+    cursor?: string | number;
+  } | null>;
+  save(params: {
+    conversationId: string;
+    agentName: string;
+    items: ConversationItem[];
+    expectedCursor?: string | number;
+  }): Promise<{
+    cursor: string | number;
+  }>;
+}
+```
+
+When a run starts with a `conversationId`:
+
+1. `load()` is called to fetch stored history
+2. History is replayed into the model, if the model supports multi-turn
+3. The agent loop runs, appending new messages and tool results to the items array
+4. On success, `save()` is called with the full updated array
+
+`save()` receives `expectedCursor`, the cursor returned by the `load()` that started this run. If another process updated the conversation in the meantime, your store should reject the write instead of overwriting newer history.
+
+```ts title="conversation-store.ts"
+const conversations = {
+  async load({ conversationId, agentName }) {
+    const row = await db.getConversation(agentName, conversationId);
+    if (!row) return null;
+    return { items: row.items, cursor: row.version };
+  },
+  async save({ conversationId, agentName, items, expectedCursor }) {
+    const updated = await db.updateConversation(
+      agentName,
+      conversationId,
+      items,
+      expectedCursor,
+    );
+    if (!updated) throw new Error("Conversation was modified by another request");
+    return { cursor: updated.version };
+  },
+};
+```
+
+## Stream Store
+
+Use the stream store to persist events emitted during a run so disconnected clients can resume where they left off.
+
+```ts title="types.ts"
+interface StreamStore {
+  open(streamId: string, meta: { runId: string }): Promise<void>;
+  append(streamId: string, event: StreamEvent): Promise<void>;
+  close(streamId: string): Promise<void>;
+  resume(streamId: string, afterSeq?: number): AsyncIterable<StreamEvent>;
+}
+```
+
+- `open()` is called when a stream starts
+- `append()` is called for every emitted event
+- `close()` is called when the run finishes, whether success or failure
+- `resume()` yields events after a given sequence number, historical events first, then live events if the stream is still active
+
+```ts title="stream-store.ts"
+function createDatabaseStreamStore(): StreamStore {
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  return {
+    async open(streamId, meta) {
+      await db.insertStream({ id: streamId, runId: meta.runId });
+    },
+    async append(streamId, event) {
+      await db.insertEvent({ streamId, seq: event.seq, event });
+    },
+    async close(streamId) {
+      await db.closeStream(streamId);
+    },
+    async *resume(streamId, afterSeq = -1) {
+      let nextSeq = afterSeq;
+
+      while (true) {
+        let yielded = false;
+
+        for await (const event of db.readEvents(streamId, nextSeq)) {
+          yielded = true;
+          nextSeq = event.seq;
+          yield event;
+        }
+
+        if (!(await db.isStreamActive(streamId))) {
+          return;
+        }
+
+        if (!yielded) {
+          await wait(50);
+        }
+      }
+    },
+  };
+}
+```
+
+## Runtime State Store
+
+Use the runtime state store to track which run and stream are active for a conversation. This enables conversation-based stream resumption.
+
+<Callout type="warning">
+`runtimeState` does not enable conversation resumption by itself. `resumeConversation(...)` also requires a `StreamStore`. If you already track the `streamId`, you can resume directly from the `StreamStore` without a runtime state store.
+</Callout>
+
+```ts title="types.ts"
+interface ConversationRuntimeStateStore {
+  get(params: { conversationId: string; agentName: string }): Promise<ConversationRuntimeState | null>;
+  set(state: ConversationRuntimeState): Promise<void>;
+  clear(params: { conversationId: string; agentName: string }): Promise<void>;
+}
+```
+
+`ConversationRuntimeState` carries:
+
+- `conversationId`, `agentName`
+- `activeRunId`, `activeStreamId`
+- `status`: `"running"`, `"finished"`, `"failed"`, or `"aborted"`
+- `updatedAt`
+
+The runtime sets state to `"running"` at stream start and clears it on completion, whether success or failure.
+
+```ts title="runtime-state-store.ts"
+const runtimeState = {
+  async get({ conversationId, agentName }) {
+    return db.getRuntimeState(agentName, conversationId);
+  },
+  async set(state) {
+    await db.upsertRuntimeState(state);
+  },
+  async clear({ conversationId, agentName }) {
+    await db.deleteRuntimeState(agentName, conversationId);
+  },
+};
+```
+
+This is usually a small table keyed by `agentName` and `conversationId`.
+
+## What Gets Stored
+
+A `ConversationItem` is one of four types:
+
+| Type | Description |
+| --- | --- |
+| Message | User, assistant, or system message with content parts (text, image, audio, video, transcript, reasoning, embedding) |
+| Tool call request | The model's request to call a tool (`type: "tool-call"`, no `result`) |
+| Tool call result | The tool's response (`type: "tool-call"`, has `result`) |
+| Provider tool result | Result from a provider-native tool (`type: "provider-tool-result"`) |
+
+## Conversation Replay
+
+Conversation replay controls how stored items become model input. Configure it on the agent or per run.
+
+### Default behavior
+
+By default, stored items are projected back into model input format and parts unsupported by the current model are stripped, such as image parts for a text-only model.
+
+```ts title="server.ts"
+const agent = defineAgent({
+  name: "assistant",
+  model: openai.model("gpt-4o"),
+  conversationReplay: {
+    omitUnsupportedParts: true, // default
+  },
+});
+```
+
+### Custom replay with prepareInput
+
+Use `prepareInput` for full control over how history becomes model input.
+
+```ts title="server.ts"
+const agent = defineAgent({
+  name: "assistant",
+  model: openai.model("gpt-4o"),
+  conversationReplay: {
+    prepareInput: async ({ items }) => {
+      const older = items.slice(0, -10);
+      const summary = await summarize(older);
+      return [
+        { type: "message", role: "system", content: `Previous context: ${summary}` },
+      ];
+    },
+  },
+});
+```
+
+When `prepareInput` is provided, it fully replaces the default projection and capability-based pruning.
+
+### Per-run override
+
+Override replay options on a single run. Set `prepareInput` to `null` to disable an inherited agent-level hook.
+
+```ts title="app.ts"
+await app.run("assistant", {
+  input: "Continue our discussion",
+  conversationId: "conv_123",
+  conversationReplay: {
+    prepareInput: null, // disable the agent-level hook for this run
+  },
+});
+```
+
+### Replay modes
+
+How replay works depends on the model's capabilities:
+
+- **`multi_turn`**: full history is replayed into every model call
+- **`single_turn_persistent`**: history is persisted but not replayed into model calls. Only the current turn's input reaches the model.
+
+## UI State vs. Model State
+
+When using server-managed persistence, the conversation shown in your UI does not have to match the exact input replayed into the model.
+
+The **model** sees input shaped by the conversation replay pipeline. Stored history can be pruned, summarized, or otherwise transformed before it is replayed. Your **UI** can render the raw stored items, a transformed view of them, or additional app state alongside them.
+
+This divergence lets you:
+
+- **Summarize old turns** before replaying them to the model, saving tokens while keeping full history in the UI
+- **Add hidden replay context** the model needs when you shape replay input yourself, such as system state or retrieval results
+- **Render a richer UI** than the replayed model input
+- **Prune replayed history** for token budget without removing older turns from the UI
+- **Keep failed turns visible** in the UI if your app stores or reconstructs them separately
+
+## Save on Success Only
+
+Better Agent saves conversation items only when a run completes successfully. If the model call fails, a tool throws, or the run is aborted, nothing is written to the conversation store.
+
+This keeps stored state clean but has a real implication: **a failed turn is not added to durable conversation history**. A later `load()` will not include that turn, and replay on the next persisted run will not include it either.
+
+If your app needs failed turns to survive reloads, reconnects, or later `load()` calls, you need to persist that state explicitly in your own app or storage layer. Better Agent can still support retry flows, but failed turns are not recovered from the conversation store unless you save them yourself.
+
+<Callout type="info">
+This is a deliberate design choice. Different apps handle failure differently. Some want to retry silently, some want to show the error, some want to save the failed attempt. Better Agent gives you the hook points without prescribing the behavior.
+</Callout>
+
+## Plugin Integration
+
+Plugins can transform conversation items before they are saved via the `onBeforeSave` hook. This runs only on the successful save path. Use it for redacting sensitive content, filtering ephemeral tool results, or adding audit metadata.
+
+```ts title="plugins.ts"
+const redactPlugin = definePlugin({
+  id: "redact",
+  onBeforeSave: async (ctx) => {
+    ctx.setItems(
+      ctx.items.map((item) => {
+        if (item.type === "tool-call" && item.result && item.name === "get_user") {
+          return { ...item, result: redactPII(item.result) };
+        }
+        return item;
+      }),
+    );
+  },
+});
+```
+
+<Callout type="info">
+If an `onBeforeSave` hook throws, the error is logged and swallowed. The save proceeds with whatever state the items were in before the error.
+</Callout>
+
+## Per-Run Overrides
+
+Override any persistence store for a single run using the `persistence` field on run options.
+
+```ts title="app.ts"
+await app.run("assistant", {
+  input: "...",
+  conversationId: "conv_123",
+  persistence: {
+    conversations: myCustomStore,
+    stream: myCustomStreamStore,
+    runtimeState: myCustomRuntimeStateStore,
+  },
+});
+```
+
+Per-run overrides take precedence over app-level defaults.
+
+## When to Skip Persistence
+
+You don't need persistence if:
+
+- Each request is fully stateless
+- The client sends full conversation history on every request
+- You don't need stream resumption
+- You manage conversation state entirely in your own application layer
+
+Omit `persistence` entirely and Better Agent runs without any stored state.

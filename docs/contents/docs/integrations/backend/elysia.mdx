@@ -1,0 +1,56 @@
+---
+title: Elysia
+description: Integrate Better Agent with Elysia.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Integrate Better Agent with Elysia by creating your app and mounting its HTTP handler.
+
+## Create the app
+
+Start with a normal Better Agent server module.
+
+```ts title="server.ts"
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { createOpenAI } from "@better-agent/providers/openai";
+
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const assistant = defineAgent({
+  name: "assistant",
+  model: openai.text("gpt-5-mini"),
+  instruction: "You are a concise assistant. Keep replies short and natural.",
+});
+
+const agentApp = betterAgent({
+  agents: [assistant],
+  baseURL: "/api",
+  secret: "dev-secret",
+});
+
+export default agentApp;
+```
+
+## Mount the handler
+
+Create an Elysia app and forward the web `Request` to Better Agent.
+
+```ts title="src/index.ts"
+import { Elysia } from "elysia";
+import agentApp from "./server";
+
+const app = new Elysia();
+
+app.all("/api/*", ({ request }) => {
+  return agentApp.handler(request);
+});
+
+app.listen(3000);
+```
+
+<Callout type="info">
+  Keep `baseURL` and the mounted route aligned. If the Better Agent app uses `baseURL: "/api"`, mount it under `/api`.
+</Callout>

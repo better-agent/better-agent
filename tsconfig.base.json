@@ -1,0 +1,22 @@
+{
+    "compilerOptions": {
+        /* base options */
+        "target": "ES2022",
+        "lib": ["ES2022"],
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        
+        /* emit (tsdown handles js + dts, typecheck scripts pass --noEmit) */
+        "declaration": true,
+        "declarationMap": true,
+
+        /* strictness */
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "useUnknownInCatchVariables": true,
+        "forceConsistentCasingInFileNames": true,
+
+        /* dx / perf */
+        "skipLibCheck": true
+    }
+}

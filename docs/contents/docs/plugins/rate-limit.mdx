@@ -1,0 +1,108 @@
+---
+title: Rate Limit
+description: Rate limiting plugin using windowed counters with optional custom storage.
+---
+
+Rate Limit blocks requests after a configured number of calls in a time window.
+
+By default it uses in-memory storage and limits each agent globally.
+
+## Basic Usage
+
+```ts
+import { rateLimitPlugin } from "@better-agent/plugins";
+
+const plugin = rateLimitPlugin({
+  windowMs: 60_000, // 1 minute window
+  max: 100,        // 100 requests per window
+});
+```
+
+This gives each agent 100 requests per minute.
+
+## Rate Limit By User
+
+Use `key` to decide which requests share a limit bucket.
+
+If you do not provide one, the plugin uses one global bucket per agent.
+
+```ts
+const plugin = rateLimitPlugin({
+  windowMs: 60_000,
+  max: 20,
+  key: ({ agentName, request }) => {
+    const userId = request.headers.get("x-user-id");
+    return `${agentName}:${userId ?? "anonymous"}`;
+  },
+});
+```
+
+## Shared Storage
+
+The default in-memory store is fine for local development or a single instance.
+
+Use `storage` when limits need to be shared across multiple instances.
+
+Your storage implementation needs:
+
+- `read()` to load the current bucket state
+- `write()` to save the next state only if the previous version still matches
+
+```ts
+const rows = new Map<string, { count: number; version: number }>();
+
+const plugin = rateLimitPlugin({
+  windowMs: 60_000,
+  max: 100,
+  storage: {
+    async read({ bucket }) {
+      return rows.get(bucket.id) ?? null;
+    },
+    async write({ bucket, prevVersion, next }) {
+      const current = rows.get(bucket.id) ?? null;
+
+      if (prevVersion === null) {
+        if (current) return false;
+        rows.set(bucket.id, next);
+        return true;
+      }
+
+      if (!current || current.version !== prevVersion) return false;
+
+      rows.set(bucket.id, next);
+      return true;
+    },
+  },
+});
+```
+
+## Store Errors
+
+If storage fails, `onStoreError` decides what to do.
+
+By default the plugin returns `"allow"` and lets the request continue.
+
+```ts
+const plugin = rateLimitPlugin({
+  windowMs: 60_000,
+  max: 100,
+  onStoreError: () => "deny",
+});
+```
+
+Return:
+
+- `"allow"` to fail open
+- `"deny"` to return `503`
+- a `Response` to send your own error response
+
+## Rate-Limited Response
+
+When a request is blocked, the plugin returns `429 Too Many Requests` with these headers:
+
+| Header | Description |
+|--------|-------------|
+| `retry-after` | Seconds until window resets |
+| `x-ratelimit-limit` | Max requests allowed |
+| `x-ratelimit-remaining` | Remaining requests (0 when limited) |
+| `x-ratelimit-reset` | Unix timestamp when window resets |

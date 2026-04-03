@@ -1,0 +1,15 @@
+{
+  "name": "generic",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@better-agent/client": "^0.0.1",
+    "@better-agent/core": "^0.0.1",
+    "@better-agent/plugins": "^0.0.1",
+    "@better-agent/providers": "^0.0.1"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "include": ["**/*", ".react-router/types/**/*"],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "types": ["node"]
+  }
+}

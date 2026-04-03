@@ -1,0 +1,84 @@
+{
+    "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+    "vcs": {
+        "enabled": true,
+        "clientKind": "git",
+        "useIgnoreFile": true
+    },
+    "formatter": {
+        "enabled": true,
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineWidth": 100,
+        "lineEnding": "lf"
+    },
+    "organizeImports": {
+        "enabled": true
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true,
+            "style": {
+                "noNonNullAssertion": "error"
+            },
+            "suspicious": {
+                "noImplicitAnyLet": "error"
+            },
+            "correctness": {
+                "noUnusedImports": "error",
+                "noUnusedVariables": "error"
+            }
+        }
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "double",
+            "jsxQuoteStyle": "double",
+            "semicolons": "always",
+            "arrowParentheses": "always"
+        }
+    },
+    "overrides": [
+        {
+            "include": [
+                "docs/app/_components/code-block.tsx",
+                "docs/app/_components/reliable-section.tsx"
+            ],
+            "linter": {
+                "rules": {
+                    "security": {
+                        "noDangerouslySetInnerHtml": "off"
+                    }
+                }
+            }
+        },
+        {
+            "include": ["packages/create/templates/**"],
+            "formatter": {
+                "enabled": false
+            },
+            "organizeImports": {
+                "enabled": false
+            },
+            "linter": {
+                "enabled": false
+            }
+        }
+    ],
+    "files": {
+        "ignore": [
+            "examples/**",
+            "docs/.source/**",
+            "**/dist/**",
+            "**/.turbo/**",
+            "**/.next/**",
+            "**/coverage/**",
+            "**/node_modules/**",
+            "**/*.d.ts",
+            "**/*.d.ts.map",
+            "**/*tsconfig.*"
+        ],
+        "maxSize": 5120000
+    }
+}

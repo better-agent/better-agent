@@ -1,0 +1,117 @@
+{
+    "name": "@better-agent/client",
+    "version": "0.0.1",
+    "description": "Better Agent client TypeScript library",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/better-agent/better-agent.git",
+        "directory": "packages/client"
+    },
+    "homepage": "https://github.com/better-agent/better-agent/tree/main/packages/client",
+    "bugs": {
+        "url": "https://github.com/better-agent/better-agent/issues"
+    },
+    "engines": {
+        "bun": ">=1.3.3",
+        "node": ">=20"
+    },
+    "type": "module",
+    "types": "./dist/index.d.mts",
+    "sideEffects": false,
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.mts",
+            "import": "./dist/index.mjs"
+        },
+        "./react": {
+            "types": "./dist/react/index.d.mts",
+            "import": "./dist/react/index.mjs"
+        },
+        "./preact": {
+            "types": "./dist/preact/index.d.mts",
+            "import": "./dist/preact/index.mjs"
+        },
+        "./svelte": {
+            "types": "./dist/svelte/index.d.mts",
+            "import": "./dist/svelte/index.mjs"
+        },
+        "./vue": {
+            "types": "./dist/vue/index.d.mts",
+            "import": "./dist/vue/index.mjs"
+        },
+        "./solid": {
+            "types": "./dist/solid/index.d.mts",
+            "import": "./dist/solid/index.mjs"
+        }
+    },
+    "typesVersions": {
+        "*": {
+            ".": ["dist/index.d.mts"],
+            "react": ["dist/react/index.d.mts"],
+            "preact": ["dist/preact/index.d.mts"],
+            "svelte": ["dist/svelte/index.d.mts"],
+            "vue": ["dist/vue/index.d.mts"],
+            "solid": ["dist/solid/index.d.mts"]
+        }
+    },
+    "scripts": {
+        "build": "bunx tsdown",
+        "dev": "bunx tsdown --watch --no-clean",
+        "test": "bun test",
+        "test:watch": "bun test --watch",
+        "test:coverage": "bun test --coverage",
+        "lint:package": "bunx publint run --strict",
+        "lint:types": "npm_config_cache=../../.npm-cache bunx attw --profile esm-only --pack .",
+        "lint": "bunx biome check .",
+        "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+        "format": "bunx biome format --write .",
+        "clean": "bunx rimraf dist"
+    },
+    "files": ["dist"],
+    "publishConfig": {
+        "access": "public"
+    },
+    "peerDependencies": {
+        "preact": "^10.0.0",
+        "react": "^18.0.0 || ^19.0.0",
+        "solid-js": "^1.9.0",
+        "svelte": "^4.0.0 || ^5.0.0",
+        "vue": "^3.3.0"
+    },
+    "peerDependenciesMeta": {
+        "preact": {
+            "optional": true
+        },
+        "react": {
+            "optional": true
+        },
+        "solid-js": {
+            "optional": true
+        },
+        "svelte": {
+            "optional": true
+        },
+        "vue": {
+            "optional": true
+        }
+    },
+    "dependencies": {
+        "@better-agent/core": "workspace:*",
+        "@better-agent/shared": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/bun": "^1.2.18",
+        "@types/node": "^22.15.30",
+        "@types/jsdom": "^28.0.0",
+        "@types/react": "^19.2.9",
+        "@types/react-dom": "19.2.2",
+        "jsdom": "^28.1.0",
+        "preact": "^10.27.2",
+        "react": "19.2.3",
+        "react-dom": "19.2.3",
+        "solid-js": "^1.9.11",
+        "svelte": "^5.39.6",
+        "vue": "^3.5.28"
+    }
+}

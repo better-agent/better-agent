@@ -1,0 +1,341 @@
+---
+title: Client
+description: Type-safe HTTP client for Better Agent servers.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+The Better Agent client is a typed HTTP client for talking to a Better Agent server. It gives you full inference for agent names, context schemas, tool contracts, and structured output, with zero runtime overhead.
+
+## Create a Client
+
+Import your server app type to get full inference.
+
+```ts title="client.ts"
+import { createClient } from "@better-agent/client";
+import type { app } from "./server";
+
+const client = createClient<typeof app>({
+  baseURL: "https://api.example.com",
+  secret: process.env.BETTER_AGENT_SECRET!,
+});
+```
+
+When your client and server are in separate packages, use the generated type from the CLI instead.
+
+```ts title="client.ts"
+import { createClient } from "@better-agent/client";
+import type { BAClientApp } from "./better-agent.types";
+
+const client = createClient<BAClientApp>({
+  baseURL: "https://api.example.com",
+  secret: process.env.BETTER_AGENT_SECRET!,
+});
+```
+
+| Field | Description |
+| --- | --- |
+| `baseURL` | Better Agent API base URL. Required. |
+| `secret` | Bearer token sent with every request. Required. |
+| `headers` | Default headers merged into every request. |
+| `fetch` | Custom `fetch` implementation, for testing or edge runtimes. |
+| `toolHandlers` | Default client tool handlers. See [Client Tools](#client-tools). |
+| `advanced` | Request customization and retry config. See [Request Customization](#request-customization). |
+
+## Type Safety
+
+The type parameter on `createClient` carries your full server definition. This gives you:
+
+- **Typed agent names**: autocomplete and compile errors for invalid names
+- **Typed context**: `context` is validated against the agent's `contextSchema`
+- **Typed structured output**: `result.structured` infers from the agent's `outputSchema`
+- **Typed tool handlers**: handler input is inferred from the tool's schema
+
+```ts title="client.ts"
+const result = await client.run("assistant", { input: "Hello" });
+
+// @ts-expect-error "asistant" is not a valid agent name
+await client.run("asistant", { input: "Hello" });
+
+await client.run("support", {
+  input: "Help me",
+  context: { userId: "user_123", plan: "pro" },
+});
+
+const summary = await client.run("summary", { input: "Summarize this..." });
+console.log(summary.structured.summary);
+console.log(summary.structured.wordCount);
+```
+
+For untyped clients, `createClient({ ... })` without a type parameter, all fields fall back to `string` and `unknown`.
+
+## run
+
+Runs an agent and waits for the final result.
+
+```ts title="client.ts"
+const result = await client.run("assistant", {
+  input: "What is the weather in Tokyo?",
+  conversationId: "conv_123",
+});
+
+console.log(result.response.finishReason);
+console.log(result.response.output);
+```
+
+Per-request options can override headers, pass an abort signal, or observe the raw response.
+
+```ts title="client.ts"
+const controller = new AbortController();
+
+const result = await client.run("assistant", { input: "Hello" }, {
+  signal: controller.signal,
+  headers: { "X-Request-Id": "req_abc" },
+  onResponse: (response) => {
+    console.log("Status:", response.status);
+  },
+});
+```
+
+## stream
+
+Streams agent execution events. Returns an `AsyncIterable<ClientEvent>`.
+
+```ts title="client.ts"
+for await (const event of client.stream("assistant", {
+  input: "Summarize this document...",
+})) {
+  switch (event.type) {
+    case "TEXT_MESSAGE_CONTENT":
+      process.stdout.write(event.delta);
+      break;
+    case "TOOL_CALL_START":
+      console.log(`Calling tool: ${event.toolCallName}`);
+      break;
+    case "RUN_FINISHED":
+      console.log("Done");
+      break;
+  }
+}
+```
+
+Each event is a `ClientEvent`, the standard runtime `Event` plus optional `seq`, `streamId`, and `runId` fields.
+
+<Callout type="info">
+Client tool calls are handled automatically inside `stream()`. When the model calls a client tool, the stream resolves the handler, executes it, and submits the result back to the server. You do not need to call `submitToolResult` manually.
+</Callout>
+
+## Client Tools
+
+Client tools run in the client environment. Register handlers either on the client config or per request.
+
+### Static handlers
+
+Define handlers on `createClient` for tools that are always available.
+
+```ts title="client.ts"
+const client = createClient<typeof app>({
+  baseURL: "https://api.example.com",
+  secret: process.env.BETTER_AGENT_SECRET!,
+  toolHandlers: {
+    getClientTime: (input, context) => ({
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      iso: new Date().toISOString(),
+    }),
+    pickFile: async (input, context) => {
+      const [handle] = await window.showOpenFilePicker();
+      return { name: handle.name };
+    },
+  },
+});
+```
+
+Each handler in `toolHandlers` receives two arguments: the validated `input` and a `ToolCallContext`.
+
+### Per-request handlers
+
+Override or add handlers for a single stream using `onToolCall` or `toolHandlers` on the request options.
+
+```ts title="client.ts"
+for await (const event of client.stream("assistant", { input: "Get my location" }, {
+  onToolCall: ({ toolName, input, context }) => {
+    if (toolName === "getLocation") {
+      return getCurrentPosition();
+    }
+    throw new Error(`Unknown tool: ${toolName}`);
+  },
+})) {
+  console.log(event.type);
+}
+```
+
+`onToolCall` receives a single object with `toolName`, `input`, and `context`.
+
+### Resolution priority
+
+When multiple handlers exist, the client resolves them in order:
+
+1. Request-level `onToolCall` (function form)
+2. Request-level `toolHandlers` (map form)
+3. Config-level `toolHandlers` from `createClient`
+
+The first match wins.
+
+### ToolCallContext
+
+Every handler receives a context with:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `agent` | `string` | Agent name. |
+| `runId` | `string` | Active run id. |
+| `toolCallId` | `string` | Tool call id. |
+| `signal` | `AbortSignal` | Aborted when the stream ends or the run finishes. |
+
+## Conversations
+
+Load stored conversation history from the server.
+
+```ts title="client.ts"
+const conversation = await client.loadConversation("assistant", "conv_123");
+
+if (conversation) {
+  console.log(`${conversation.items.length} items`);
+}
+```
+
+Returns `{ items: ConversationItem[] }` or `null` if nothing is stored.
+
+## Resume
+
+### Resume a stream
+
+Reconnect to a stored stream by stream id. Yields events after the given sequence number.
+
+```ts title="client.ts"
+for await (const event of client.resumeStream("assistant", {
+  streamId: "run_abc",
+  afterSeq: 42,
+})) {
+  console.log(event.type, event.seq);
+}
+```
+
+### Resume a conversation
+
+Reconnect to the active stream for a conversation.
+
+```ts title="client.ts"
+for await (const event of client.resumeConversation("assistant", {
+  conversationId: "conv_123",
+})) {
+  if (event.type === "TEXT_MESSAGE_CONTENT") {
+    process.stdout.write(event.delta);
+  }
+}
+```
+
+Both return `AsyncIterable<ClientEvent>`. If no stream exists, they return an empty iterable.
+
+## Abort
+
+Cancel an active run.
+
+```ts title="client.ts"
+await client.abortRun({
+  agent: "assistant",
+  runId: "run_abc",
+});
+```
+
+## Tool Approvals
+
+Submit an approval decision for a pending tool call.
+
+```ts title="client.ts"
+await client.submitToolApproval({
+  agent: "assistant",
+  runId: "run_abc",
+  toolCallId: "call_123",
+  decision: "approved",
+  note: "Verified by admin",
+  actorId: "admin_1",
+});
+```
+
+`decision` accepts `"approved"` or `"denied"`. Both `note` and `actorId` are optional.
+
+See [Human in the Loop](/docs/concepts/hil) for the full approval lifecycle.
+
+## Request Customization
+
+### prepareRequest
+
+Use `prepareRequest` to rewrite outgoing requests, including headers, URL, method, or body.
+
+```ts title="client.ts"
+const client = createClient<typeof app>({
+  baseURL: "https://api.example.com",
+  secret: process.env.BETTER_AGENT_SECRET!,
+  advanced: {
+    prepareRequest: async (context) => {
+      const token = await getAuthToken();
+      return {
+        headers: {
+          ...Object.fromEntries(new Headers(context.headers).entries()),
+          Authorization: `Bearer ${token}`,
+        },
+      };
+    },
+  },
+});
+```
+
+The callback receives the full request context including `operation`, which API call is being made, `url`, `method`, `headers`, and `body`.
+
+Return an object with any fields you want to override, or `undefined` to leave the request unchanged.
+
+### Tool submission retries
+
+Client tool results and approval submissions retry automatically on server errors (`5xx`) and rate limits (`429`).
+
+```ts title="client.ts"
+const client = createClient<typeof app>({
+  baseURL: "https://api.example.com",
+  secret: process.env.BETTER_AGENT_SECRET!,
+  advanced: {
+    toolSubmissionMaxAttempts: 5,
+    toolSubmissionRetryDelayMs: 200,
+  },
+});
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `toolSubmissionMaxAttempts` | `3` | Max retry attempts for tool result and approval submissions. |
+| `toolSubmissionRetryDelayMs` | `150` | Base delay in ms. Multiplied by the attempt number for backoff. |
+
+## Framework Hooks and UI
+
+The core client covers HTTP transport and type safety. For reactive state management, message rendering, and UI hooks, use the framework adapter for your stack.
+
+**Full-stack:**
+
+- [Next.js](/docs/integrations/full-stack/nextjs)
+- [Nuxt](/docs/integrations/full-stack/nuxt)
+- [SvelteKit](/docs/integrations/full-stack/sveltekit)
+- [SolidStart](/docs/integrations/full-stack/solidstart)
+- [Remix](/docs/integrations/full-stack/remix)
+- [Astro](/docs/integrations/full-stack/astro)
+- [TanStack Start](/docs/integrations/full-stack/tanstack-start)
+
+**Backend:**
+
+- [Express](/docs/integrations/backend/express)
+- [Fastify](/docs/integrations/backend/fastify)
+- [Hono](/docs/integrations/backend/hono)
+- [Elysia](/docs/integrations/backend/elysia)
+
+<Callout type="info">
+Framework adapters use `AgentChatController` under the hood, a headless state machine that manages messages, streaming, tool approvals, and error recovery. If you're building a custom adapter, you can use it directly via `createAgentChatController()`.
+</Callout>

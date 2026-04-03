@@ -1,0 +1,287 @@
+---
+title: Agent
+description: The fundamental building block of Better Agent.
+---
+
+An agent is the core unit of behavior in Better Agent. It brings together a model, instructions, tools, and runtime behavior into one typed definition.
+
+At minimum, an agent needs a `name` and a `model`.
+
+```ts title="server.ts"
+import { defineAgent } from "@better-agent/core";
+import { openai } from "./openai";
+
+export const helloAgent = defineAgent({
+  name: "hello",
+  model: openai.model("gpt-4o"),
+});
+```
+
+You can also add a description for humans reading your agent definitions.
+
+```ts title="server.ts"
+const helloAgent = defineAgent({
+  name: "hello",
+  model: openai.model("gpt-4o"),
+  description: "Greets users and answers general questions.",
+});
+```
+
+## Instructions and Context
+
+Use `instruction` for the agent's system behavior. It can be a static value or a function driven by validated context.
+
+```ts title="server.ts"
+const writer = defineAgent({
+  name: "writer",
+  model: openai.model("gpt-4o"),
+  instruction: "You are a concise technical writer.",
+});
+```
+
+Use `contextSchema` to define typed, validated runtime data for a run, like the current user, plan, or workspace.
+
+```ts title="server.ts"
+import { z } from "zod";
+
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai.model("gpt-4o"),
+  contextSchema: z.object({
+    userId: z.string(),
+    plan: z.enum(["free", "pro"]),
+  }),
+  instruction: (context) =>
+    `Help user ${context.userId}. They are on the ${context.plan} plan.`,
+});
+```
+
+When you register that agent in `betterAgent`, pass the matching `context` when you run it.
+
+```ts title="server.ts"
+const app = betterAgent({
+  agents: [supportAgent],
+});
+
+const result = await app.run("support", {
+  input: "Can I upgrade my account?",
+  context: {
+    userId: "user_123",
+    plan: "pro",
+  },
+});
+```
+
+<Callout type="info">
+Instruction support is capability-gated. Fixed-prompt models like image, speech, and embeddings do not expose `instruction`.
+</Callout>
+
+## Tools
+
+Tools let the agent act. Pass a single tool source or an array.
+
+```ts title="server.ts"
+import { weatherTool, stockTool } from "./tools";
+
+const assistant = defineAgent({
+  name: "assistant",
+  model: openai.model("gpt-4o"),
+  tools: [weatherTool, stockTool],
+});
+```
+
+When a tool fails during execution, the default behavior sends the error back to the model so it can recover. Use `toolErrorMode` to change this, or `onToolError` for custom recovery logic.
+
+```ts title="server.ts"
+const strictAgent = defineAgent({
+  name: "strict",
+  model: openai.model("gpt-4o"),
+  tools: [deployTool],
+  toolErrorMode: "throw",
+});
+```
+
+See [Tools](/docs/concepts/tools) for defining tools, client tools, approvals, and error recovery hooks.
+
+## Steps
+
+Each step produces one model response. If that response includes tool calls, the results feed into the next step. The loop continues until the model finishes naturally, a stop condition is met, or the step limit is reached.
+
+Use `maxSteps` to cap how many steps a run can take.
+
+```ts title="server.ts"
+const researcher = defineAgent({
+  name: "researcher",
+  model: openai.model("gpt-4o"),
+  tools: [searchWeb, readPage],
+  maxSteps: 5,
+});
+```
+
+Use `stopWhen` when the run should stop based on your own workflow rules, not just the model's natural finish.
+
+```ts title="server.ts"
+const researchAgent = defineAgent({
+  name: "research",
+  model: openai.model("gpt-4o"),
+  contextSchema: z.object({
+    plan: z.enum(["free", "pro"]),
+  }),
+  tools: [searchWeb, readPage],
+  maxSteps: 6,
+  stopWhen: ({ stepIndex, context }) =>
+    context.plan === "free" && stepIndex >= 1,
+});
+```
+
+<Callout type="info">
+`maxSteps` is enough for most agents. Add `stopWhen` only when your workflow needs a stronger boundary.
+</Callout>
+
+Use `onStep` to shape a run before a step starts, and `onStepFinish` to observe the result after it completes.
+
+```ts title="server.ts"
+const researchAgent = defineAgent({
+  name: "research",
+  model: openai.model("gpt-4o"),
+  tools: [searchWeb, readPage],
+  maxSteps: 4,
+  onStep: async ({ stepIndex, setActiveTools }) => {
+    if (stepIndex === 0) {
+      setActiveTools(["search_web"]);
+    }
+  },
+  onStepFinish: async ({ stepIndex, result }) => {
+    console.log("step", stepIndex + 1, result.response.finishReason);
+  },
+});
+```
+
+## Structured Output
+
+Use `outputSchema` when the final response must conform to a typed schema instead of free-form text.
+
+```ts title="server.ts"
+import { z } from "zod";
+
+const summaryAgent = defineAgent({
+  name: "summary",
+  model: openai.model("gpt-4o"),
+  outputSchema: {
+    name: "summary_result",
+    schema: z.object({
+      summary: z.string(),
+    }),
+  },
+});
+```
+
+If parsing or validation fails, the default behavior throws. Use `outputErrorMode` to change this, or `onOutputError` for custom recovery.
+
+```ts title="server.ts"
+const lenientSummary = defineAgent({
+  name: "lenient-summary",
+  model: openai.model("gpt-4o"),
+  outputSchema: {
+    name: "summary_result",
+    schema: z.object({ summary: z.string() }),
+  },
+  outputErrorMode: "skip",
+});
+```
+
+See [Structured Output](/docs/concepts/structured-output) for the full schema options and runtime behavior.
+
+## Model Defaults
+
+Define run defaults on the agent so callers don't repeat them.
+
+- `defaultModelOptions`: provider-specific model options.
+- `defaultModalities`: output modalities.
+
+```ts title="server.ts"
+const summaryAgent = defineAgent({
+  name: "summary",
+  model: openai.model("gpt-4o"),
+  defaultModelOptions: {
+    temperature: 0.2,
+  },
+});
+```
+
+When a modality supports extra options, define those in `defaultModelOptions` too.
+
+```ts title="server.ts"
+const imageAgent = defineAgent({
+  name: "image",
+  model: openai.image("gpt-image-1"),
+  defaultModalities: ["image"],
+  defaultModelOptions: {
+    size: "1024x1024",
+  },
+});
+```
+
+Per-run overrides always win over agent defaults.
+
+## Conversation Replay
+
+Use `conversationReplay` to shape how stored conversation history is prepared before replaying it into the model.
+
+```ts title="server.ts"
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai.model("gpt-4o"),
+  conversationReplay: {
+    omitUnsupportedParts: true,
+  },
+});
+```
+
+### Prepare Input
+
+Use `conversationReplay.prepareInput` when you need full control over how stored history is replayed into the model.
+
+<Callout type="info">
+When you run with a `conversationId`, Better Agent projects stored history back into model input and, by default, prunes unsupported parts. This helps avoid common replay errors, especially after switching the agent to a model with different input capabilities. When you add `prepareInput`, you replace that default replay path with your own.
+</Callout>
+
+<Callout type="warning">
+`omitUnsupportedParts` and `prepareInput` do not run together. If you add `prepareInput`, Better Agent uses your returned input and skips the default prune path.
+</Callout>
+
+```ts title="server.ts"
+import { defineAgent, pruneInputByCapabilities } from "@better-agent/core";
+
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai.model("gpt-4o"),
+  conversationReplay: {
+    prepareInput: ({ items, caps }) => {
+      const recent = items.slice(-12);
+      return pruneInputByCapabilities(recent, caps);
+    },
+  },
+});
+```
+
+Use it to prune old turns, remove unsupported parts, or apply your own replay shaping.
+
+See [Persistence](/docs/concepts/persistence) for the broader persistence model and how replay fits in.
+
+## Advanced
+
+Use `advanced` for lower-level runtime defaults in interactive flows that use client tools or tool approvals.
+
+```ts title="server.ts"
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai.model("gpt-4o"),
+  advanced: {
+    clientToolResultTimeoutMs: 30_000,
+    toolApprovalTimeoutMs: 60_000,
+  },
+});
+```
+
+These timeouts apply when a tool does not specify its own. See [Human in the Loop](/docs/concepts/hil) for the full approval lifecycle.

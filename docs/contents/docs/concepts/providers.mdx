@@ -1,0 +1,256 @@
+---
+title: Providers
+description: Connect Better Agent to model APIs.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Providers connect Better Agent to model APIs. A provider gives you typed models with declared capabilities. Better Agent uses those capabilities to gate features at the type level. Tools, structured output, and modalities only appear when the model supports them.
+
+## Use a Provider
+
+The pattern is the same across providers: create an instance, get a model, and pass it to an agent.
+
+```ts title="server.ts"
+import { defineAgent } from "@better-agent/core";
+import { createOpenAI } from "@better-agent/providers/openai";
+
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const agent = defineAgent({
+  name: "assistant",
+  model: openai.model("gpt-4o"),
+});
+```
+
+Every provider accepts at minimum `apiKey` and optional `baseURL` and `headers` for custom endpoints or proxies.
+
+```ts title="server.ts"
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: "https://my-proxy.example.com/v1",
+  headers: { "X-Custom-Header": "value" },
+});
+```
+
+## Model Helpers
+
+### model()
+
+`model()` auto-detects the model type from the ID and routes to the correct provider endpoint.
+
+```ts title="server.ts"
+const textModel = openai.model("gpt-4o");
+const imageModel = openai.model("gpt-image-1");
+```
+
+This is the most common way to get a model. Unknown IDs default to the text endpoint.
+
+### Modality helpers
+
+Providers can expose modality-specific helpers for explicit model selection.
+
+```ts title="server.ts"
+const text = openai.text("gpt-4o");
+const image = openai.image("gpt-image-1");
+const audio = openai.audio("tts-1");
+const video = openai.video("sora-2");
+const transcription = openai.transcription("gpt-4o-transcribe");
+const embedding = openai.embedding("text-embedding-3-small");
+```
+
+Not all providers support all helpers. `model()` is always available. Modality helpers are convenience shortcuts when you want the type system to enforce a specific output type.
+
+<Callout type="info">
+Check your provider's reference page for the full list of supported model helpers and model IDs.
+</Callout>
+
+## Capabilities
+
+Every model declares what it can do via a `caps` object. Better Agent reads capabilities to decide which features are available at the type level and at runtime.
+
+| Capability | Type | Description |
+| --- | --- | --- |
+| `inputModalities` | `Record<Modality, boolean>` | What the model accepts as input: `text`, `image`, `audio`, `video`, `file`. |
+| `outputModalities` | `Record<Modality, boolean \| { options }>` | What the model produces: `text`, `image`, `audio`, `video`, `embedding`. Can include typed options. |
+| `inputShape` | `"chat" \| "prompt"` | `"chat"` means multi-message with roles. `"prompt"` means single role-less input. |
+| `replayMode` | `"multi_turn" \| "single_turn_persistent" \| "single_turn_only"` | How conversation history is handled on replay. |
+| `supportsInstruction` | `boolean` | Whether the model accepts system instructions. |
+| `structured_output` | `boolean` | Whether JSON schema output is supported. |
+| `tools` | `boolean` | Whether tool calling is supported. |
+| `additionalSupportedRoles` | `string[]` | Extra roles beyond `system`, `user`, `assistant`, such as `"developer"`. |
+
+Capabilities gate TypeScript fields on the agent definition:
+
+- `outputSchema` only appears when `structured_output` is `true`
+- `tools` only appears when `tools` is `true`
+- `instruction` only appears when `supportsInstruction` is `true`
+- `defaultModalities` is constrained to the model's output modalities
+
+```ts title="server.ts"
+const agent = defineAgent({
+  name: "assistant",
+  model: openai.text("gpt-4o"),
+  tools: [weatherTool],
+  outputSchema: { schema: z.object({ answer: z.string() }) },
+});
+
+const imageAgent = defineAgent({
+  name: "painter",
+  model: openai.image("gpt-image-1"),
+});
+```
+
+## Provider Options
+
+Models accept provider-specific options like `temperature`, `reasoningEffort`, or `maxOutputTokens`. These are fully typed by the provider. You get autocomplete and compile errors.
+
+Set defaults on the agent:
+
+```ts title="server.ts"
+const agent = defineAgent({
+  name: "reasoner",
+  model: openai.text("o3"),
+  defaultModelOptions: {
+    reasoningEffort: "high",
+    temperature: 0.2,
+  },
+});
+```
+
+Override per run:
+
+```ts title="app.ts"
+const result = await app.run("reasoner", {
+  input: "Solve this step by step...",
+  modelOptions: {
+    reasoningEffort: "low",
+    temperature: 0.8,
+  },
+});
+```
+
+Per-run `modelOptions` override agent `defaultModelOptions` for that run.
+
+<Callout type="info">
+Each provider and model type has its own set of supported options. Check your provider's reference page for the full list.
+</Callout>
+
+## Hosted Tools
+
+Some models offer native tools that run on the provider side, such as web search, code execution, file access, and more. These do not need a local handler.
+
+Access them through `provider.tools`.
+
+```ts title="server.ts"
+const agent = defineAgent({
+  name: "researcher",
+  model: openai.text("gpt-4o"),
+  tools: [
+    openai.tools.webSearch({ search_context_size: "medium" }),
+    openai.tools.codeInterpreter({}),
+    myLocalTool,
+  ],
+});
+```
+
+Hosted tools mix with regular server and client tools in the same `tools` array. Each hosted tool has a standard shape:
+
+```ts
+{
+  kind: "hosted",
+  provider: "openai",
+  type: "web_search",
+  config: {},
+}
+```
+
+You do not write a handler. The provider executes them during the model call and returns results as part of the response.
+
+Some hosted tools accept configuration:
+
+```ts title="server.ts"
+openai.tools.webSearch({
+  search_context_size: "high",
+  user_location: { type: "approximate", country: "US" },
+});
+
+openai.tools.fileSearch({
+  vector_store_ids: ["vs_abc123"],
+  max_num_results: 10,
+});
+```
+
+<Callout type="info">
+Each provider ships its own set of hosted tools. Check your provider's reference page for the full list and configuration options.
+</Callout>
+
+## Custom Providers
+
+You can create a custom provider by implementing the `GenerativeModel` interface. A model needs `providerId`, `modelId`, `caps`, and at least one of `doGenerate` or `doGenerateStream`.
+
+```ts title="my-provider.ts"
+import type { GenerativeModel, Capabilities } from "@better-agent/core";
+
+const MY_CAPS = {
+  inputModalities: { text: true },
+  outputModalities: { text: true },
+  inputShape: "chat",
+  replayMode: "multi_turn",
+  supportsInstruction: true,
+  structured_output: false,
+  tools: false,
+} satisfies Capabilities;
+
+type MyOptions = {
+  temperature?: number;
+};
+
+export const myModel: GenerativeModel<MyOptions, "my-provider", "my-model-1", typeof MY_CAPS> = {
+  providerId: "my-provider",
+  modelId: "my-model-1",
+  caps: MY_CAPS,
+  doGenerate: async (options, ctx) => {
+    const response = await callMyAPI(options.input, {
+      temperature: options.temperature,
+      signal: ctx.signal,
+    });
+
+    return {
+      ok: true,
+      value: {
+        response: {
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "text", text: response.text }],
+            },
+          ],
+          finishReason: "stop",
+          usage: {
+            inputTokens: response.usage.input,
+            outputTokens: response.usage.output,
+          },
+        },
+      },
+    };
+  },
+  doGenerateStream: undefined,
+};
+```
+
+Then use it like any other model:
+
+```ts title="server.ts"
+const agent = defineAgent({
+  name: "custom",
+  model: myModel,
+});
+```
+
+<Callout type="info">
+Want to help expand Better Agent? Contributions for new providers and improvements are always welcome.
+</Callout>

@@ -1,0 +1,228 @@
+---
+title: Human in the Loop
+description: Require human approval before a tool runs.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Human in the Loop pauses execution and waits for an approval decision before a tool runs. Use it when a tool is sensitive, costly, or irreversible.
+
+Common examples:
+
+- deleting data
+- issuing refunds
+- running infrastructure changes
+- triggering client-side actions that need user confirmation
+
+## Static Approval
+
+Use `approval` on the tool contract when the tool should always require approval.
+
+```ts title="tools.ts"
+import { defineTool } from "@better-agent/core";
+import { z } from "zod";
+
+const deleteDatabase = defineTool({
+  name: "delete_database",
+  schema: z.object({
+    databaseId: z.string(),
+  }),
+  approval: {
+    required: true,
+    timeoutMs: 300_000,
+    meta: { risk: "high" },
+  },
+}).server(async ({ databaseId }) => {
+  await db.delete(databaseId);
+  return { deleted: true };
+});
+```
+
+When the agent calls `delete_database`, Better Agent pauses and waits for a human decision before running the handler. Execution only blocks when the resolved policy ends up with `required: true`.
+
+## Dynamic Approval
+
+Use `resolve` when approval should depend on runtime input or context.
+
+```ts title="tools.ts"
+const refundPayment = defineTool({
+  name: "refund_payment",
+  schema: z.object({
+    orderId: z.string(),
+    amount: z.number(),
+  }),
+  approval: {
+    resolve: ({ input, context }) => ({
+      required: input.amount > 100,
+      timeoutMs: 60_000,
+      meta: {
+        amount: input.amount,
+        risk: input.amount > 500 ? "critical" : "medium",
+      },
+    }),
+  },
+}).server(async ({ orderId, amount }) => {
+  await processRefund(orderId, amount);
+  return { refunded: amount, orderId };
+});
+```
+
+The resolver receives:
+
+- `context`: validated agent context for the run
+- `input`: validated tool input
+- `runId`
+- `toolCallId`
+- `toolName`
+- `toolTarget`: `"server"` or `"client"`
+
+The return value can override `required`, `timeoutMs`, and `meta` for that specific call.
+
+## Timeouts
+
+Approval timeout can be defined at three levels, checked in order:
+
+1. The return value of `approval.resolve()`
+2. `approval.timeoutMs` on the tool contract
+3. `advanced.toolApprovalTimeoutMs` as the app-wide fallback
+
+App-wide default:
+
+```ts title="server.ts"
+const app = betterAgent({
+  agents: [adminAgent],
+  advanced: {
+    toolApprovalTimeoutMs: 600_000,
+  },
+});
+```
+
+If approval times out, Better Agent emits a `TOOL_APPROVAL_UPDATED` event with `state: "expired"` and the run fails with a `TIMEOUT` error.
+
+## Approval Lifecycle
+
+The approval flow uses two event types: `TOOL_APPROVAL_REQUIRED` and `TOOL_APPROVAL_UPDATED`.
+
+```text
+TOOL_CALL_END
+  → TOOL_APPROVAL_REQUIRED  (state: "requested")
+  → TOOL_APPROVAL_UPDATED   (state: "requested")
+  → [waiting for human]
+  → TOOL_APPROVAL_UPDATED   (state: "approved" | "denied" | "expired")
+  → TOOL_CALL_RESULT
+```
+
+The `TOOL_APPROVAL_UPDATED` event carries a `state` field with one of four values:
+
+- `"requested"`: waiting for a decision
+- `"approved"`: human approved, tool will execute
+- `"denied"`: human denied, tool call is skipped
+- `"expired"`: timeout reached, run fails
+
+<Callout type="info">
+There are only two event types. Use the `state` field on `TOOL_APPROVAL_UPDATED` to distinguish between outcomes.
+</Callout>
+
+## Submitting Approvals
+
+### Core client
+
+```ts title="client.ts"
+await client.submitToolApproval({
+  agent: "admin",
+  runId: "run_123",
+  toolCallId: "call_456",
+  decision: "approved",
+  note: "Verified by admin",
+  actorId: "admin_1",
+});
+```
+
+`decision` accepts `"approved"` or `"denied"`. Both `note` and `actorId` are optional and forwarded to the `TOOL_APPROVAL_UPDATED` event for audit trails.
+
+### React client
+
+Approvals are exposed through `pendingToolApprovals` and `approveToolCall`.
+
+```tsx title="client.tsx"
+import { useAgent } from "@better-agent/client/react";
+
+function ApprovalPanel({ client }: { client: typeof myClient }) {
+  const { pendingToolApprovals, approveToolCall } = useAgent(client, {
+    agent: "admin",
+  });
+
+  return (
+    <div>
+      {pendingToolApprovals.map((approval) => (
+        <div key={approval.toolCallId}>
+          <div>{approval.toolName}</div>
+          <pre>{JSON.stringify(approval.meta, null, 2)}</pre>
+          <button
+            onClick={() =>
+              approveToolCall({
+                toolCallId: approval.toolCallId,
+                decision: "approved",
+              })
+            }
+          >
+            Approve
+          </button>
+          <button
+            onClick={() =>
+              approveToolCall({
+                toolCallId: approval.toolCallId,
+                decision: "denied",
+                note: "Rejected by reviewer",
+              })
+            }
+          >
+            Deny
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+Each pending approval includes:
+
+- `toolCallId`
+- `toolName`
+- `args`: raw JSON arguments
+- `toolTarget`: `"server"` or `"client"`
+- `input`: validated input
+- `meta`: metadata from the approval policy
+
+<Callout type="info">
+The `approveToolCall` API is the same across all framework adapters (React, Vue, Svelte, Solid, Preact).
+</Callout>
+
+## Listening for Events
+
+Use the stream to update approval UI in real time.
+
+```ts title="client.ts"
+for await (const event of client.stream("admin", { input: "Delete project 123" })) {
+  if (event.type === "TOOL_APPROVAL_REQUIRED") {
+    showNotification("Approval needed", event.toolCallName);
+  }
+
+  if (event.type === "TOOL_APPROVAL_UPDATED") {
+    switch (event.state) {
+      case "approved":
+        showSuccess("Approved");
+        break;
+      case "denied":
+        showError("Denied");
+        break;
+      case "expired":
+        showError("Approval expired");
+        break;
+    }
+  }
+}
+```
+
+See [Tools](/docs/concepts/tools) for how `approval` is defined on tool contracts, and [Events](/docs/concepts/events) for the full event reference.

@@ -1,0 +1,65 @@
+{
+    "name": "@better-agent/adapters",
+    "version": "0.0.1",
+    "description": "Better Agent framework adapters",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/better-agent/better-agent.git",
+        "directory": "packages/adapters"
+    },
+    "homepage": "https://github.com/better-agent/better-agent/tree/main/packages/adapters",
+    "bugs": {
+        "url": "https://github.com/better-agent/better-agent/issues"
+    },
+    "type": "module",
+    "types": "./dist/index.d.mts",
+    "sideEffects": false,
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.mts",
+            "import": "./dist/index.mjs"
+        },
+        "./express": {
+            "types": "./dist/express.d.mts",
+            "import": "./dist/express.mjs"
+        },
+        "./fastify": {
+            "types": "./dist/fastify.d.mts",
+            "import": "./dist/fastify.mjs"
+        }
+    },
+    "typesVersions": {
+        "*": {
+            ".": ["dist/index.d.mts"],
+            "express": ["dist/express.d.mts"],
+            "fastify": ["dist/fastify.d.mts"]
+        }
+    },
+    "scripts": {
+        "build": "bunx tsdown",
+        "dev": "bunx tsdown --watch --no-clean",
+        "lint:package": "bunx publint run --strict",
+        "lint:types": "npm_config_cache=../../.npm-cache bunx attw --profile esm-only --pack .",
+        "lint": "bunx biome check .",
+        "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+        "format": "bunx biome format --write .",
+        "clean": "bunx rimraf dist"
+    },
+    "files": ["dist"],
+    "publishConfig": {
+        "access": "public"
+    },
+    "devDependencies": {
+        "@better-agent/core": "workspace:*",
+        "@types/bun": "^1.2.18",
+        "@types/express": "^5.0.3",
+        "@types/node": "^22.15.30",
+        "express": "^5.1.0",
+        "fastify": "^5.6.1",
+        "neverthrow": "^8.2.0"
+    },
+    "peerDependencies": {
+        "@better-agent/core": "workspace:*"
+    }
+}

@@ -1,0 +1,365 @@
+---
+title: SvelteKit
+description: Build Better Agent apps in SvelteKit.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Build a Better Agent app in SvelteKit with a typed client, `createAgentChat(...)`, durable conversations, approvals, client tools, and stream recovery.
+
+## Create the app
+
+Start with a normal Better Agent server module.
+
+```ts title="src/lib/better-agent/server.ts"
+import { env } from "$env/dynamic/private";
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { createOpenAI } from "@better-agent/providers/openai";
+
+const openai = createOpenAI({
+  apiKey: env.OPENAI_API_KEY,
+});
+
+const assistant = defineAgent({
+  name: "assistant",
+  model: openai.text("gpt-5-mini"),
+  instruction: "You are a concise assistant. Keep replies short and natural.",
+});
+
+const app = betterAgent({
+  agents: [assistant],
+  baseURL: "/agents",
+  secret: "dev-secret",
+});
+
+export default app;
+```
+
+## Mount the route
+
+Create a SvelteKit endpoint route and forward the request to Better Agent.
+
+```ts title="src/routes/agents/[...path]/+server.ts"
+import type { RequestHandler } from "./$types";
+import app from "$lib/better-agent/server";
+
+export const GET: RequestHandler = async ({ request }) => app.handler(request);
+export const POST: RequestHandler = async ({ request }) => app.handler(request);
+export const PUT: RequestHandler = async ({ request }) => app.handler(request);
+export const PATCH: RequestHandler = async ({ request }) => app.handler(request);
+export const DELETE: RequestHandler = async ({ request }) => app.handler(request);
+export const OPTIONS: RequestHandler = async ({ request }) => app.handler(request);
+export const HEAD: RequestHandler = async ({ request }) => app.handler(request);
+```
+
+<Callout type="info">
+  Keep `baseURL` and the route path aligned. If the app uses `baseURL: "/agents"`, the route should live under `/agents`.
+</Callout>
+
+## Create the typed client
+
+Import the server app type so agent names, context, tools, and output stay aligned.
+
+```ts title="src/lib/better-agent/client.ts"
+import { createClient } from "@better-agent/client";
+import type app from "./server";
+
+export const client = createClient<typeof app>({
+  baseURL: "/agents",
+  secret: "dev-secret",
+});
+```
+
+## Build a basic chat
+
+In SvelteKit, use the Svelte adapter store. Read state through `$chat` and call actions on `chat`.
+
+```svelte title="src/routes/+page.svelte"
+<script lang="ts">
+  import { createAgentChat } from "@better-agent/client/svelte";
+  import { client } from "$lib/better-agent/client";
+
+  const chat = createAgentChat(client, {
+    agent: "assistant",
+  });
+
+  let input = $state("");
+</script>
+
+<div>
+  <form
+    onsubmit={async (event) => {
+      event.preventDefault();
+      const value = input.trim();
+      if (!value) return;
+      input = "";
+      await chat.sendMessage(value);
+    }}
+  >
+    <input bind:value={input} placeholder="Ask something..." />
+    <button type="submit" disabled={$chat.status !== "ready"}>
+      Send
+    </button>
+    <button
+      type="button"
+      onclick={() => chat.stop()}
+      disabled={$chat.status !== "submitted" && $chat.status !== "streaming"}
+    >
+      Stop
+    </button>
+  </form>
+
+  <p>Status: {$chat.status}</p>
+  {#if $chat.error}
+    <p>{$chat.error.message}</p>
+  {/if}
+
+  <ul>
+    {#each $chat.messages as message (message.localId)}
+      <li>
+        {message.role}: {message.parts.map((part) => part.type === "text" ? part.text : "").join("")}
+      </li>
+    {/each}
+  </ul>
+</div>
+```
+
+## Keep one conversation across refreshes
+
+When you use server-managed persistence, give the chat a `conversationId`, hydrate the saved transcript, and resume the active stream on page load.
+
+```svelte title="src/routes/+page.svelte"
+<script lang="ts">
+  import { createAgentChat } from "@better-agent/client/svelte";
+  import { client } from "$lib/better-agent/client";
+
+  const chat = createAgentChat(client, {
+    agent: "assistant",
+    conversationId: "support-demo",
+    hydrateFromServer: true,
+    resume: true,
+  });
+</script>
+
+<div>
+  <p>Status: {$chat.status}</p>
+  <p>Conversation: {$chat.conversationId}</p>
+  <p>Messages: {$chat.messages.length}</p>
+</div>
+```
+
+Use `resume: true` when you want the store to reconnect to the active conversation stream on init. Use `resume: { streamId, afterSeq }` when you already track a stream cursor yourself.
+
+<Callout type="info">
+  For `resume: true`, Better Agent needs persistence to find the active stream for a conversation. With only a `StreamStore`, use `resume: { streamId }`. Add runtime state to enable conversation-based resume. See [Persistence](/docs/concepts/persistence).
+</Callout>
+
+## Pass context and tune a run
+
+Use store options for stable per-chat defaults like `context`, `modelOptions`, and `delivery`.
+
+```svelte title="src/routes/billing/+page.svelte"
+<script lang="ts">
+  import { createAgentChat } from "@better-agent/client/svelte";
+  import { client } from "$lib/better-agent/client";
+
+  const chat = createAgentChat(client, {
+    agent: "assistant",
+    context: {
+      userId: "user_123",
+      plan: "pro",
+    },
+    modelOptions: {
+      reasoningEffort: "medium",
+    },
+    delivery: "stream",
+  });
+</script>
+
+<button onclick={() => chat.sendMessage("Summarize my plan.")}>
+  Ask
+</button>
+```
+
+## Add browser-side tools
+
+Register client tool handlers on the store when the agent uses tools that should run in the browser.
+
+```svelte title="src/routes/tools/+page.svelte"
+<script lang="ts">
+  import { createAgentChat } from "@better-agent/client/svelte";
+  import { client } from "$lib/better-agent/client";
+
+  const chat = createAgentChat(client, {
+    agent: "assistant",
+    toolHandlers: {
+      show_confetti: async ({ color }) => {
+        console.log("Confetti color:", color);
+        return { shown: true };
+      },
+    },
+  });
+</script>
+
+<button onclick={() => chat.sendMessage("Celebrate the upgrade.")}>
+  Run
+</button>
+```
+
+Use `onToolCall` instead when you want one per-run function instead of a handler map.
+
+## Handle approvals in the UI
+
+When a tool needs human approval, the store exposes pending requests and a helper to answer them.
+
+```svelte title="src/routes/approvals/+page.svelte"
+<script lang="ts">
+  import { createAgentChat } from "@better-agent/client/svelte";
+  import { client } from "$lib/better-agent/client";
+
+  const chat = createAgentChat(client, {
+    agent: "assistant",
+  });
+</script>
+
+<div>
+  {#each $chat.pendingToolApprovals as approval (approval.toolCallId)}
+    <div>
+      <div>{approval.toolName}</div>
+      <pre>{JSON.stringify(approval.meta, null, 2)}</pre>
+
+      <button
+        onclick={() =>
+          chat.approveToolCall({
+            toolCallId: approval.toolCallId,
+            decision: "approved",
+          })}
+      >
+        Approve
+      </button>
+
+      <button
+        onclick={() =>
+          chat.approveToolCall({
+            toolCallId: approval.toolCallId,
+            decision: "denied",
+          })}
+      >
+        Deny
+      </button>
+    </div>
+  {/each}
+</div>
+```
+
+## Watch events and final results
+
+Use callbacks when you want analytics, data parts, disconnect handling, or typed final output.
+
+```svelte title="src/routes/observability/+page.svelte"
+<script lang="ts">
+  import { createAgentChat } from "@better-agent/client/svelte";
+  import { client } from "$lib/better-agent/client";
+
+  createAgentChat(client, {
+    agent: "assistant",
+    onResponse: (response) => {
+      console.log("HTTP status", response.status);
+    },
+    onEvent: (event) => {
+      console.log("Event", event.type);
+    },
+    onData: (part) => {
+      console.log("Data part", part.data);
+    },
+    onDisconnect: ({ error, streamId }) => {
+      console.error("Stream disconnected", streamId, error);
+    },
+    onError: (error) => {
+      console.error("Run failed", error);
+    },
+    onFinish: ({ finishReason, response }) => {
+      console.log("Finished", finishReason);
+      console.log(response?.output);
+    },
+  });
+</script>
+```
+
+If your agent has a default `outputSchema`, `onFinish` also receives typed `structured` output.
+
+## Shape local replay
+
+Use these options when you want to control how local message history is turned back into model input.
+
+```svelte title="src/routes/local-state/+page.svelte"
+<script lang="ts">
+  import { createAgentChat } from "@better-agent/client/svelte";
+  import { client } from "$lib/better-agent/client";
+
+  const chat = createAgentChat(client, {
+    agent: "assistant",
+    initialMessages: [
+      {
+        role: "assistant",
+        parts: [{ type: "text", text: "Welcome back." }],
+      },
+    ],
+    prepareMessages: ({ messages, input }) => {
+      return [
+        {
+          type: "message",
+          role: "system",
+          content: `Reuse the important context from the last ${messages.length} local messages.`,
+        },
+        { type: "message", role: "user", content: [{ type: "text", text: String(input) }] },
+      ];
+    },
+  });
+</script>
+
+<div>
+  <button onclick={() => chat.regenerate()}>
+    Regenerate last turn
+  </button>
+  <button
+    onclick={() =>
+      chat.setMessages((messages) => messages.filter((message) => message.role !== "assistant"))}
+  >
+    Hide assistant messages
+  </button>
+</div>
+```
+
+Use `retryMessage(localId)` when you want to rerun one earlier user turn, and `resumeStream(...)` or `resumeConversation(...)` when you want to reconnect manually instead of using `resume` on init.
+
+## Optimistic UI
+
+Use optimistic insertion when you want the user message to appear in the chat before the request finishes.
+
+```svelte title="src/routes/optimistic/+page.svelte"
+<script lang="ts">
+  import { createAgentChat } from "@better-agent/client/svelte";
+  import { client } from "$lib/better-agent/client";
+
+  const chat = createAgentChat(client, {
+    agent: "assistant",
+    optimisticUserMessage: {
+      enabled: true,
+      onError: "remove",
+    },
+    onOptimisticUserMessageError: ({ error }) => {
+      console.error("Optimistic message failed", error);
+    },
+  });
+</script>
+
+<div>
+  <button onclick={() => chat.clearError()}>
+    Clear error
+  </button>
+  <button onclick={() => chat.reset()}>
+    Reset chat
+  </button>
+</div>
+```

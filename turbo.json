@@ -1,0 +1,41 @@
+{
+    "$schema": "https://turbo.build/schema.json",
+    "globalDependencies": ["tsconfig.base.json", "biome.json", "bun.lock"],
+    "tasks": {
+        "build": {
+            "dependsOn": ["^build"],
+            "inputs": ["$TURBO_DEFAULT$", "tsconfig.json", "tsdown.config.ts"],
+            "outputs": ["dist/**"]
+        },
+        "lint": {
+            "inputs": ["$TURBO_DEFAULT$", "biome.json"],
+            "outputs": []
+        },
+        "lint:package": {
+            "dependsOn": ["build"],
+            "inputs": ["$TURBO_DEFAULT$", "package.json"],
+            "outputs": []
+        },
+        "lint:types": {
+            "dependsOn": ["build"],
+            "inputs": ["$TURBO_DEFAULT$", "package.json", "tsconfig.json"],
+            "outputs": []
+        },
+        "typecheck": {
+            "inputs": ["$TURBO_DEFAULT$", "tsconfig.json", "tsconfig.base.json"],
+            "outputs": []
+        },
+        "format": {
+            "inputs": ["$TURBO_DEFAULT$", "biome.json"],
+            "outputs": []
+        },
+        "dev": {
+            "cache": false,
+            "persistent": true
+        },
+        "clean": {
+            "cache": false,
+            "outputs": []
+        }
+    }
+}

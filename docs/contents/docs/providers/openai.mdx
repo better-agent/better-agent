@@ -1,0 +1,92 @@
+---
+title: OpenAI
+---
+
+Use OpenAI with Better Agent by creating the provider and choosing a model.
+
+## Quick Start
+
+```ts
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { createOpenAI } from "@better-agent/providers/openai";
+
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const assistant = defineAgent({
+  name: "assistant",
+  model: openai.text("gpt-5-mini"),
+  instruction: "You are a concise assistant. Keep replies short and natural.",
+});
+
+const app = betterAgent({
+  agents: [assistant],
+});
+```
+
+## Model Helpers
+
+Use the helper that matches the kind of model you want:
+
+| Helper | Use it for |
+|--------|-------------|
+| `openai.text(...)` | Text and multimodal response models |
+| `openai.image(...)` | Image generation and editing |
+| `openai.video(...)` | Video generation |
+| `openai.audio(...)` | Text-to-speech |
+| `openai.transcription(...)` | Audio transcription |
+| `openai.embedding(...)` | Embeddings |
+| `openai.model(...)` | Any OpenAI model id when you already know the exact model |
+
+## OpenAI Model Options
+
+```ts
+const assistant = defineAgent({
+  name: "assistant",
+  model: openai.text("gpt-5-mini"),
+  defaultModelOptions: {
+    reasoningEffort: "low",
+    textVerbosity: "low",
+  },
+});
+```
+
+## Hosted Tools
+
+```ts
+const assistant = defineAgent({
+  name: "assistant",
+  model: openai.text("gpt-5-mini"),
+  tools: [
+    openai.tools.webSearch({ search_context_size: "low" }),
+  ],
+});
+```
+
+## Files
+
+```ts
+const upload = await openai.files.upload({
+  file: pdfBuffer,
+  filename: "report.pdf",
+  mimeType: "application/pdf",
+});
+
+const input = [
+  {
+    type: "message",
+    role: "user",
+    content: [
+      { type: "text", text: "Summarize this PDF." },
+      {
+        type: "file",
+        source: {
+          kind: "provider-file",
+          ref: { provider: "openai", id: upload.value.id },
+        },
+      },
+    ],
+  },
+];
+```
