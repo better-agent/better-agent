@@ -1,6 +1,6 @@
 {
     "name": "@better-agent/providers",
-    "version": "0.1.0-canary.0",
+    "version": "0.1.0-canary.1",
     "description": "Better Agent providers TypeScript library",
     "license": "MIT",
     "repository": {
