@@ -6,8 +6,6 @@
     "scripts": {
         "dev": "turbo dev --filter='./packages/*'",
         "build": "turbo build --filter='./packages/*'",
-        "docs:typecheck": "bunx tsc -p docs/tsconfig.json --noEmit",
-        "docs:og:preview": "cd docs && bun run og:preview",
         "lint": "biome check . --write",
         "lint:ci": "biome check .",
         "lint:types": "turbo run lint:types --filter='./packages/*'",
