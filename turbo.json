@@ -22,6 +22,7 @@
             "outputs": []
         },
         "typecheck": {
+            "dependsOn": ["^build"],
             "inputs": ["$TURBO_DEFAULT$", "tsconfig.json", "tsconfig.base.json"],
             "outputs": []
         },
