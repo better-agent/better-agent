@@ -12,10 +12,10 @@
     "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
-    "@better-agent/client": "^0.0.1",
-    "@better-agent/core": "^0.0.1",
-    "@better-agent/plugins": "^0.0.1",
-    "@better-agent/providers": "^0.0.1",
+    "@better-agent/client": "workspace:*",
+    "@better-agent/core": "workspace:*",
+    "@better-agent/plugins": "workspace:*",
+    "@better-agent/providers": "workspace:*",
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {

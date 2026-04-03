@@ -10,10 +10,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@better-agent/client": "^0.0.1",
-    "@better-agent/core": "^0.0.1",
-    "@better-agent/plugins": "^0.0.1",
-    "@better-agent/providers": "^0.0.1",
+    "@better-agent/client": "workspace:*",
+    "@better-agent/core": "workspace:*",
+    "@better-agent/plugins": "workspace:*",
+    "@better-agent/providers": "workspace:*",
     "@remix-run/node": "^2.17.4",
     "@remix-run/react": "^2.17.4",
     "@remix-run/serve": "^2.17.4",
