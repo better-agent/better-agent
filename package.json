@@ -16,6 +16,7 @@
         "clean": "turbo clean && rimraf \"node_modules\" \"**/node_modules\" \"**/dist\" \".turbo\"",
         "bump": "bumpp",
         "release": "bun run build && bun run bump --no-push",
+        "release:beta": "bun run build && bumpp --preid beta --release prerelease --no-push",
         "release:canary": "bun run build && bumpp --preid canary --release prerelease --no-push"
     },
     "devDependencies": {
