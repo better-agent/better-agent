@@ -11,10 +11,10 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "@better-agent/client": "^0.0.1",
-    "@better-agent/core": "^0.0.1",
-    "@better-agent/plugins": "^0.0.1",
-    "@better-agent/providers": "^0.0.1",
+    "@better-agent/client": "workspace:*",
+    "@better-agent/core": "workspace:*",
+    "@better-agent/plugins": "workspace:*",
+    "@better-agent/providers": "workspace:*",
     "@tailwindcss/postcss": "^4.1.18",
     "h3": "^1.15.11",
     "nuxt": "^4.3.1",

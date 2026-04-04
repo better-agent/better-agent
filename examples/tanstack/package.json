@@ -13,10 +13,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-agent/client": "^0.0.1",
-    "@better-agent/core": "^0.0.1",
-    "@better-agent/plugins": "^0.0.1",
-    "@better-agent/providers": "^0.0.1",
+    "@better-agent/client": "workspace:*",
+    "@better-agent/core": "workspace:*",
+    "@better-agent/plugins": "workspace:*",
+    "@better-agent/providers": "workspace:*",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-devtools": "^0.7.0",
     "@tanstack/react-router": "1.168.10",
