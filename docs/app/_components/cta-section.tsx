@@ -281,6 +281,7 @@ export default function CtaSection() {
                     alt=""
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-0 size-full object-cover object-top -z-1"
+                    loading="eager"
                     src="/cta-bg.png"
                     fill
                     style={{
