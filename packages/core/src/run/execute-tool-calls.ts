@@ -467,7 +467,14 @@ export const executeToolCalls = async <TContext>(params: {
         const runToolHandler = async (input: unknown) => {
             if (tool.kind === "server") {
                 return await tool.handler(input, {
+                    runId: params.runId,
+                    agentName: params.agentName,
+                    ...(params.conversationId !== undefined
+                        ? { conversationId: params.conversationId }
+                        : {}),
+                    parentMessageId: params.parentMessageId,
                     signal: params.signal,
+                    ...(params.context !== undefined ? { context: params.context } : {}),
                     emit: params.emit,
                 });
             }

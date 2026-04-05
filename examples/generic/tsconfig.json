@@ -10,6 +10,9 @@
     ]
   },
   "include": [
-    "better-agent/**/*.ts"
+    "better-agent/**/*.ts",
+    "sandbox-example/**/*.ts",
+    "manual-test-sandbox.ts",
+    "manual-test-sandbox-client.ts"
   ]
 }

@@ -1,15 +1,25 @@
 {
-  "name": "generic",
-  "private": true,
-  "type": "module",
-  "devDependencies": {
-    "@types/node": "^22.10.2",
-    "typescript": "^5.9.3"
-  },
-  "dependencies": {
-    "@better-agent/client": "workspace:*",
-    "@better-agent/core": "workspace:*",
-    "@better-agent/plugins": "workspace:*",
-    "@better-agent/providers": "workspace:*"
-  }
+    "name": "generic",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "sandbox:example:prepare": "cd ../../packages/core && bun run build && cd ../plugins && bun run build && cd ../providers && bun run build",
+        "sandbox:example:run": "bun --env-file=.env --env-file=.env.local run ./sandbox-example/run.ts",
+        "sandbox:example:stream": "bun --env-file=.env --env-file=.env.local run ./sandbox-example/stream.ts",
+        "sandbox:example:demo:file": "bun --env-file=.env --env-file=.env.local run ./sandbox-example/stream.ts file",
+        "sandbox:example:demo:web": "bun --env-file=.env --env-file=.env.local run ./sandbox-example/stream.ts web",
+        "sandbox:test": "bun run ./manual-test-sandbox-client.ts",
+        "sandbox:test:agent": "cd ../../packages/providers && bun run build && cd ../../examples/generic && bun run ./manual-test-sandbox.ts"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.2",
+        "typescript": "^5.9.3"
+    },
+    "dependencies": {
+        "@better-agent/client": "workspace:*",
+        "@better-agent/core": "workspace:*",
+        "@better-agent/plugins": "workspace:*",
+        "@better-agent/providers": "workspace:*",
+        "e2b": "^2.19.0"
+    }
 }
