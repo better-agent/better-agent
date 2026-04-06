@@ -22,10 +22,10 @@ export default async function PrimitivesCodeBlock({
             codeblock={{
                 allowCopy: true,
                 className:
-                    "my-0 rounded-none border border-t-0 border-[color:var(--border)] bg-white text-[12px] dark:bg-[var(--panel)] sm:text-[12.5px]",
+                    "my-0 rounded-none border border-t-0 border-[color:var(--border)] bg-white text-[11.5px] dark:bg-[var(--panel)] sm:text-[12px]",
                 viewportProps: {
                     className:
-                        "bg-white pt-4 opacity-88 dark:bg-[var(--panel)] sm:[&_pre]:text-[12.5px] [&_pre]:text-[12px] [&_.shiki]:opacity-88",
+                        "bg-white pt-4 opacity-88 dark:bg-[var(--panel)] sm:[&_pre]:text-[12px] [&_pre]:text-[11.5px] [&_.shiki]:opacity-88",
                 },
             }}
         />

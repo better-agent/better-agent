@@ -3,6 +3,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AskAILauncher } from "./_components/ask-ai-launcher";
 import Providers from "./_components/providers";
 import SiteHeader from "./_components/site-header";
 import "./globals.css";
@@ -94,11 +95,18 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="en" suppressHydrationWarning>
-            <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+            <body
+                suppressHydrationWarning
+                className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+            >
                 <Providers>
-                    <div className="relative isolate flex min-h-svh flex-col overflow-x-clip [--header-height:2.9rem]">
+                    <div
+                        suppressHydrationWarning
+                        className="relative isolate flex min-h-svh flex-col overflow-x-clip [--header-height:2.9rem]"
+                    >
                         <SiteHeader pageTree={source.pageTree} />
                         {children}
+                        <AskAILauncher />
                     </div>
                 </Providers>
                 <Analytics />
