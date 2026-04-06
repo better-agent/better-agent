@@ -285,7 +285,7 @@ export default function CtaSection() {
                     src="/cta-bg.png"
                     fill
                     style={{
-                        filter: "hue-rotate(154deg) saturate(0.88) brightness(0.66) contrast(1.08)",
+                        filter: "hue-rotate(178deg) saturate(1.18) brightness(0.7) contrast(1.06)",
                     }}
                 />
                 <div className="relative z-10 mx-auto w-full max-w-[700px] overflow-hidden rounded-xl border border-[color:rgba(255,255,255,0.1)] bg-[color:var(--background)] shadow-2xl">
