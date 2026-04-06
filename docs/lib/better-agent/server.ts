@@ -18,7 +18,7 @@ const askDocs = defineAgent({
             title: z.string().optional(),
         })
         .optional(),
-    maxSteps: 4,
+    maxSteps: 10,
     instruction: (context) => `You are a friendly and helpful assistant for Better Agent.
 ${context?.url ? `\nThe user is currently viewing the page: ${context.title ? `${context.title} (${context.url})` : context.url}. Prioritize this context if relevant.\n` : ""}
 Your goal is to provide very short, straight-to-the-point answers based only on the Better Agent documentation.
