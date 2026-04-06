@@ -54,7 +54,7 @@ const app = betterAgent({
                 }`,
         }),
     ],
-    baseURL: "/agents"
+    baseURL: "/agents",
 });
 
 export default app;
