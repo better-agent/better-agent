@@ -54,8 +54,7 @@ const app = betterAgent({
                 }`,
         }),
     ],
-    baseURL: "/agents",
-    secret: process.env.BETTER_AGENT_SECRET,
+    baseURL: "/agents"
 });
 
 export default app;
