@@ -24,6 +24,13 @@ function processBodyHtml(html: string): string {
     return processed;
 }
 
+function shouldIncludeRelease(tag: string, prerelease: boolean): boolean {
+    if (!prerelease) return true;
+
+    // TODO: remove beta prerelease support here once we have stable releases.
+    return /-beta(?:\.\d+)?$/i.test(tag);
+}
+
 export async function fetchReleases(): Promise<Release[]> {
     const releases: Release[] = [];
     let page = 1;
@@ -64,6 +71,7 @@ export async function fetchReleases(): Promise<Release[]> {
 
         for (const release of data) {
             if (release.draft) continue;
+            if (!shouldIncludeRelease(release.tag_name, release.prerelease)) continue;
 
             releases.push({
                 tag: release.tag_name,
