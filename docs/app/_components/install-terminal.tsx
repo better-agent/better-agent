@@ -103,7 +103,7 @@ export default function InstallTerminal() {
                         <Link
                             aria-label="npm"
                             className="inline-flex h-[1.18rem] w-[1.18rem] items-center justify-center rounded-[4px] text-[color:var(--muted-foreground)] transition-colors hover:bg-[var(--accent)] hover:text-[color:var(--foreground)]"
-                            href="https://www.npmjs.com/"
+                            href="https://www.npmjs.com/package/create-better-agent"
                         >
                             <BrandIcon
                                 className="h-[9.5px] w-[9.5px]"
