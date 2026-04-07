@@ -270,7 +270,7 @@
     },
     "packages/adapters": {
       "name": "@better-agent/adapters",
-      "version": "0.1.0-beta.1",
+      "version": "0.1.0-canary.3",
       "devDependencies": {
         "@better-agent/core": "workspace:*",
         "@types/bun": "^1.2.18",
@@ -286,7 +286,7 @@
     },
     "packages/cli": {
       "name": "@better-agent/cli",
-      "version": "0.1.0-beta.1",
+      "version": "0.1.0-canary.3",
       "bin": {
         "better-agent": "./dist/index.mjs",
       },
@@ -307,7 +307,7 @@
     },
     "packages/client": {
       "name": "@better-agent/client",
-      "version": "0.1.0-beta.1",
+      "version": "0.1.0-canary.3",
       "dependencies": {
         "@better-agent/core": "workspace:*",
         "@better-agent/shared": "workspace:*",
@@ -343,7 +343,7 @@
     },
     "packages/core": {
       "name": "@better-agent/core",
-      "version": "0.1.0-beta.1",
+      "version": "0.1.0-canary.3",
       "dependencies": {
         "@better-agent/shared": "workspace:*",
         "@standard-schema/spec": "1.1.0",
@@ -357,7 +357,7 @@
     },
     "packages/create": {
       "name": "create-better-agent",
-      "version": "0.1.0-beta.1",
+      "version": "0.1.0-canary.3",
       "bin": {
         "create-better-agent": "./dist/index.mjs",
       },
@@ -373,7 +373,7 @@
     },
     "packages/plugins": {
       "name": "@better-agent/plugins",
-      "version": "0.1.0-beta.1",
+      "version": "0.1.0-canary.3",
       "dependencies": {
         "@better-agent/shared": "workspace:*",
       },
@@ -389,7 +389,7 @@
     },
     "packages/providers": {
       "name": "@better-agent/providers",
-      "version": "0.1.0-beta.1",
+      "version": "0.1.0-canary.3",
       "dependencies": {
         "@better-agent/shared": "workspace:*",
         "zod": "^4.1.13",
@@ -404,7 +404,7 @@
     },
     "packages/shared": {
       "name": "@better-agent/shared",
-      "version": "0.1.0-beta.1",
+      "version": "0.1.0-canary.3",
       "dependencies": {
         "neverthrow": "^8.2.0",
       },
@@ -4685,6 +4685,14 @@
 
     "estree-util-build-jsx/estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
 
+    "example-generic/@better-agent/client": ["@better-agent/client@0.1.0-beta.1", "", { "dependencies": { "@better-agent/core": "0.1.0-canary.2", "@better-agent/shared": "0.1.0-canary.2" }, "peerDependencies": { "preact": "^10.0.0", "react": "^18.0.0 || ^19.0.0", "solid-js": "^1.9.0", "svelte": "^4.0.0 || ^5.0.0", "vue": "^3.3.0" }, "optionalPeers": ["preact", "react", "solid-js", "svelte", "vue"] }, "sha512-x9WlfdnMAoNEyXmjrFqrAu8ZSAONsJvMB+38MjNhstbYLHH6GMdTllTLRAGBYFJRTeWA+tanIpKWQOZwp5vCuw=="],
+
+    "example-generic/@better-agent/core": ["@better-agent/core@0.1.0-beta.1", "", { "dependencies": { "@better-agent/shared": "0.1.0-canary.2", "@standard-schema/spec": "1.1.0", "ajv": "^8.17.1", "json-schema-to-ts": "^3.1.1" } }, "sha512-fOb1UNXtY7Cc00csBKty04Mo6pIxIgadOLW55djoGoIfFPdZTQdDFLloABwnfg9Lt5ngQFjggCTwF2Y/GqF1Aw=="],
+
+    "example-generic/@better-agent/plugins": ["@better-agent/plugins@0.1.0-beta.1", "", { "dependencies": { "@better-agent/shared": "0.1.0-canary.2" }, "peerDependencies": { "@better-agent/core": "0.1.0-canary.2" } }, "sha512-bbhVAn1vBFXmKk3/xQ43F+BLjUq1LNKquTxFxmzkBqkgqEOTay2OPgorkzfopvWAeDNqOdGaLFLiqcjWtoGdUw=="],
+
+    "example-generic/@better-agent/providers": ["@better-agent/providers@0.1.0-beta.1", "", { "dependencies": { "@better-agent/shared": "0.1.0-canary.2", "zod": "^4.1.13" }, "peerDependencies": { "@better-agent/core": "0.1.0-canary.2" } }, "sha512-6u2loQus81qdie+RDw6ndJF054hRHc9lvpbL+v9eJFH5AkAhgbMdW/6cUn7G1eKF1NGl/G25VxLg+t7ED+VouA=="],
+
     "example-generic/e2b": ["e2b@2.1.4", "", { "dependencies": { "@bufbuild/protobuf": "^2.6.2", "@connectrpc/connect": "2.0.0-rc.3", "@connectrpc/connect-web": "2.0.0-rc.3", "compare-versions": "^6.1.0", "dockerfile-ast": "^0.7.1", "glob": "^11.0.3", "openapi-fetch": "^0.9.7", "platform": "^1.3.6", "tar": "^7.4.3" } }, "sha512-YeQz+fR7Q/cNED0CKJgu/c1ody4fMaLAva4aZ6G3iMljJYxFTEQvCXS+FRBcvORZkIgDultqmMsqehzGwNUfaA=="],
 
     "example-generic/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
@@ -5390,6 +5398,20 @@
     "eslint/ajv/json-schema-traverse": ["json-schema-traverse@0.4.1", "", {}, "sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg=="],
 
     "eslint/chalk/ansi-styles": ["ansi-styles@4.3.0", "", { "dependencies": { "color-convert": "^2.0.1" } }, "sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg=="],
+
+    "example-generic/@better-agent/client/@better-agent/core": ["@better-agent/core@0.1.0-canary.2", "", { "dependencies": { "@better-agent/shared": "0.1.0-canary.2", "@standard-schema/spec": "1.1.0", "ajv": "^8.17.1", "json-schema-to-ts": "^3.1.1" } }, "sha512-xyWp+W/zRaCVp3pR3hiQGe4Oe773tR7JMCOTcM89FrUSXYitn+9d3wpVkrg4jCwTR6aPBLmMg4eVsy4gP5ZIuw=="],
+
+    "example-generic/@better-agent/client/@better-agent/shared": ["@better-agent/shared@0.1.0-canary.2", "", { "dependencies": { "neverthrow": "^8.2.0" } }, "sha512-gaRkbHc2WfGed4uF9BdvoVy1yYE5v6px/I8e9kIBveE3fzljWRmoflm4AixN0ahJZYFOzs3M7EqlRisJcCxXLg=="],
+
+    "example-generic/@better-agent/core/@better-agent/shared": ["@better-agent/shared@0.1.0-canary.2", "", { "dependencies": { "neverthrow": "^8.2.0" } }, "sha512-gaRkbHc2WfGed4uF9BdvoVy1yYE5v6px/I8e9kIBveE3fzljWRmoflm4AixN0ahJZYFOzs3M7EqlRisJcCxXLg=="],
+
+    "example-generic/@better-agent/plugins/@better-agent/core": ["@better-agent/core@0.1.0-canary.2", "", { "dependencies": { "@better-agent/shared": "0.1.0-canary.2", "@standard-schema/spec": "1.1.0", "ajv": "^8.17.1", "json-schema-to-ts": "^3.1.1" } }, "sha512-xyWp+W/zRaCVp3pR3hiQGe4Oe773tR7JMCOTcM89FrUSXYitn+9d3wpVkrg4jCwTR6aPBLmMg4eVsy4gP5ZIuw=="],
+
+    "example-generic/@better-agent/plugins/@better-agent/shared": ["@better-agent/shared@0.1.0-canary.2", "", { "dependencies": { "neverthrow": "^8.2.0" } }, "sha512-gaRkbHc2WfGed4uF9BdvoVy1yYE5v6px/I8e9kIBveE3fzljWRmoflm4AixN0ahJZYFOzs3M7EqlRisJcCxXLg=="],
+
+    "example-generic/@better-agent/providers/@better-agent/core": ["@better-agent/core@0.1.0-canary.2", "", { "dependencies": { "@better-agent/shared": "0.1.0-canary.2", "@standard-schema/spec": "1.1.0", "ajv": "^8.17.1", "json-schema-to-ts": "^3.1.1" } }, "sha512-xyWp+W/zRaCVp3pR3hiQGe4Oe773tR7JMCOTcM89FrUSXYitn+9d3wpVkrg4jCwTR6aPBLmMg4eVsy4gP5ZIuw=="],
+
+    "example-generic/@better-agent/providers/@better-agent/shared": ["@better-agent/shared@0.1.0-canary.2", "", { "dependencies": { "neverthrow": "^8.2.0" } }, "sha512-gaRkbHc2WfGed4uF9BdvoVy1yYE5v6px/I8e9kIBveE3fzljWRmoflm4AixN0ahJZYFOzs3M7EqlRisJcCxXLg=="],
 
     "example-generic/e2b/glob": ["glob@11.1.0", "", { "dependencies": { "foreground-child": "^3.3.1", "jackspeak": "^4.1.1", "minimatch": "^10.1.1", "minipass": "^7.1.2", "package-json-from-dist": "^1.0.0", "path-scurry": "^2.0.0" }, "bin": { "glob": "dist/esm/bin.mjs" } }, "sha512-vuNwKSaKiqm7g0THUBu2x7ckSs3XJLXE+2ssL7/MfTGPLLcrJQ/4Uq1CjPTtO5cCIiRxqvN6Twy1qOwhL0Xjcw=="],
 
