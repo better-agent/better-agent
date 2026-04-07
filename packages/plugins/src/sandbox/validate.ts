@@ -3,7 +3,7 @@ import type { SandboxPluginConfig } from "./types";
 
 /** Validates `sandboxPlugin` configuration. */
 export function validateSandboxPluginConfig(config: SandboxPluginConfig): void {
-    const client = config.client ?? config.driver;
+    const client = config.client;
 
     if (!client || typeof client !== "object") {
         throw createValidationError(

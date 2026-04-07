@@ -1,6 +1,6 @@
+import { useState } from "react";
 import type { MetaFunction } from "@remix-run/node";
 import { useAgent } from "@better-agent/client/react";
-import { useState } from "react";
 import { client } from "../better-agent/client";
 
 export const meta: MetaFunction = () => [{ title: "Better Agent Starter" }];

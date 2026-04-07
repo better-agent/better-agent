@@ -39,8 +39,10 @@
         "@better-agent/shared": "workspace:*"
     },
     "devDependencies": {
+        "@daytonaio/sdk": "^0.161.0",
         "@types/bun": "^1.2.18",
-        "@types/node": "^22.15.30"
+        "@types/node": "^22.15.30",
+        "e2b": "^2.19.0"
     },
     "peerDependencies": {
         "@better-agent/core": "workspace:*"

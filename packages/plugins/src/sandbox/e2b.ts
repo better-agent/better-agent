@@ -1,6 +1,6 @@
 import { BetterAgentError } from "@better-agent/shared/errors";
 import type {
-    E2BSandboxDriverConfig,
+    E2BSandboxClientConfig,
     SandboxClient,
     SandboxCommandParams,
     SandboxCommandResult,
@@ -68,7 +68,7 @@ const loadE2B = async (): Promise<E2BSandboxModule> => {
 };
 
 /** Creates a sandbox client backed by the E2B SDK. */
-export function createE2BSandboxClient(config: E2BSandboxDriverConfig = {}): SandboxClient {
+export function createE2BSandboxClient(config: E2BSandboxClientConfig = {}): SandboxClient {
     const connectionOptions = removeUndefined({
         apiKey: config.apiKey,
         accessToken: config.accessToken,
@@ -179,6 +179,3 @@ export function createE2BSandboxClient(config: E2BSandboxDriverConfig = {}): San
         },
     };
 }
-
-/** Backwards-compatible alias for the previous name. */
-export const createE2BSandboxDriver = createE2BSandboxClient;

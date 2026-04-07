@@ -1,7 +1,14 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { copyDirectory } from "./files";
-import type { FrameworkId, InitMode, PluginId, ProviderId, TargetFile } from "./types";
+import type {
+    FrameworkId,
+    InitMode,
+    PluginId,
+    ProviderId,
+    SandboxClientId,
+    TargetFile,
+} from "./types";
 
 export const FRAMEWORKS = [
     {
@@ -96,7 +103,13 @@ export const PLUGINS = [
     { id: "ip-allowlist", label: "IP Allowlist" },
     { id: "logging", label: "Logging" },
     { id: "rate-limit", label: "Rate Limit" },
+    { id: "sandbox", label: "Sandbox" },
 ] as const satisfies ReadonlyArray<{ id: PluginId; label: string }>;
+
+export const SANDBOX_CLIENTS = [
+    { id: "e2b", label: "E2B" },
+    { id: "daytona", label: "Daytona" },
+] as const satisfies ReadonlyArray<{ id: SandboxClientId; label: string }>;
 
 type FrameworkPaths = {
     serverLabel: string;
@@ -116,6 +129,7 @@ const FRAMEWORK_META = Object.fromEntries(
 const FRAMEWORK_IDS = FRAMEWORKS.map((framework) => framework.id) as FrameworkId[];
 const PROVIDER_IDS = PROVIDERS.map((provider) => provider.id) as ProviderId[];
 const PLUGIN_IDS = PLUGINS.map((plugin) => plugin.id) as PluginId[];
+const SANDBOX_CLIENT_IDS = SANDBOX_CLIENTS.map((client) => client.id) as SandboxClientId[];
 
 const providerConfig: Record<
     ProviderId,
@@ -159,15 +173,15 @@ const providerConfig: Record<
 };
 
 const pluginConfig: Record<
-    PluginId,
+    Exclude<PluginId, "sandbox">,
     {
-        importName: string;
+        importNames: string[];
         setup: string;
         envLines?: string[];
     }
 > = {
     auth: {
-        importName: "authPlugin",
+        importNames: ["authPlugin"],
         setup: [
             "authPlugin({",
             '    apiKeys: [process.env.BETTER_AGENT_API_KEY ?? "dev-api-key"],',
@@ -176,15 +190,15 @@ const pluginConfig: Record<
         envLines: ["BETTER_AGENT_API_KEY=dev-api-key"],
     },
     "ip-allowlist": {
-        importName: "ipAllowlistPlugin",
+        importNames: ["ipAllowlistPlugin"],
         setup: ["ipAllowlistPlugin({", '    allow: ["127.0.0.1", "::1"],', "})"].join("\n"),
     },
     logging: {
-        importName: "loggingPlugin",
+        importNames: ["loggingPlugin"],
         setup: "loggingPlugin()",
     },
     "rate-limit": {
-        importName: "rateLimitPlugin",
+        importNames: ["rateLimitPlugin"],
         setup: ["rateLimitPlugin({", "    windowMs: 60_000,", "    max: 30,", "})"].join("\n"),
     },
 };
@@ -198,6 +212,9 @@ export const isProviderId = (value: string): value is ProviderId =>
 export const isPluginId = (value: string): value is PluginId =>
     PLUGIN_IDS.includes(value as PluginId);
 
+export const isSandboxClientId = (value: string): value is SandboxClientId =>
+    SANDBOX_CLIENT_IDS.includes(value as SandboxClientId);
+
 export const frameworkLabel = (framework: FrameworkId) => FRAMEWORK_META[framework].label;
 
 export const providerLabel = (provider: ProviderId) =>
@@ -205,6 +222,64 @@ export const providerLabel = (provider: ProviderId) =>
 
 export const pluginLabel = (plugin: PluginId) =>
     PLUGINS.find((entry) => entry.id === plugin)?.label ?? plugin;
+
+export const sandboxClientLabel = (sandboxClient: SandboxClientId) =>
+    SANDBOX_CLIENTS.find((entry) => entry.id === sandboxClient)?.label ?? sandboxClient;
+
+type PluginTemplateConfig = {
+    importNames: string[];
+    setup: string;
+    envLines?: string[];
+};
+
+const getSandboxPluginConfig = (sandboxClient?: SandboxClientId): PluginTemplateConfig => {
+    if (sandboxClient === "daytona") {
+        return {
+            importNames: ["sandboxPlugin", "createDaytonaSandboxClient"],
+            setup: [
+                "sandboxPlugin({",
+                "    client: createDaytonaSandboxClient({",
+                '        apiKey: process.env.DAYTONA_API_KEY ?? "your-daytona-api-key",',
+                '        target: process.env.DAYTONA_TARGET ?? "your-daytona-target",',
+                "    }),",
+                "})",
+            ].join("\n"),
+            envLines: [
+                "DAYTONA_API_KEY=your-daytona-api-key",
+                "DAYTONA_TARGET=your-daytona-target",
+            ],
+        };
+    }
+
+    return {
+        importNames: ["sandboxPlugin", "createE2BSandboxClient"],
+        setup: [
+            "sandboxPlugin({",
+            "    client: createE2BSandboxClient({",
+            '        apiKey: process.env.E2B_API_KEY ?? "your-e2b-api-key",',
+            "    }),",
+            "})",
+        ].join("\n"),
+        envLines: ["E2B_API_KEY=your-e2b-api-key"],
+    };
+};
+
+const getPluginTemplateConfig = (
+    plugin: PluginId,
+    sandboxClient?: SandboxClientId,
+): PluginTemplateConfig =>
+    plugin === "sandbox" ? getSandboxPluginConfig(sandboxClient) : pluginConfig[plugin];
+
+const renderPluginBlock = (plugins: PluginId[], sandboxClient?: SandboxClientId) => {
+    if (plugins.length === 0) return "";
+    const setups = plugins.map((p) =>
+        getPluginTemplateConfig(p, sandboxClient)
+            .setup.split("\n")
+            .map((line) => `        ${line}`)
+            .join("\n"),
+    );
+    return ["    plugins: [", setups.join(",\n"), "    ],"].join("\n");
+};
 
 export const getFrameworkPromptOptions = () =>
     FRAMEWORKS.map((framework) => ({
@@ -248,7 +323,11 @@ export const copyLocalTemplate = (framework: FrameworkId, cwd: string) => {
     );
 };
 
-export const envTemplate = (providers: ProviderId[], plugins: PluginId[]) => {
+export const envTemplate = (
+    providers: ProviderId[],
+    plugins: PluginId[],
+    sandboxClient?: SandboxClientId,
+) => {
     const lines = [
         "# Added by better-agent",
         ...providers.map(
@@ -258,7 +337,7 @@ export const envTemplate = (providers: ProviderId[], plugins: PluginId[]) => {
         "BETTER_AGENT_SECRET=your-secret-here",
     ];
     for (const plugin of plugins) {
-        lines.push(...(pluginConfig[plugin].envLines ?? []));
+        lines.push(...(getPluginTemplateConfig(plugin, sandboxClient).envLines ?? []));
     }
     return lines.join("\n");
 };
@@ -457,7 +536,11 @@ export const getFrameworkBaseTargetFiles = (
     cwd: string,
     framework: FrameworkId,
     useSrcDir: boolean,
-    selection: { providers: ProviderId[]; plugins: PluginId[] },
+    selection: {
+        providers: ProviderId[];
+        plugins: PluginId[];
+        sandboxClient?: SandboxClientId;
+    },
 ): TargetFile[] => {
     if (framework === "generic") {
         const envImport = "";
@@ -465,23 +548,17 @@ export const getFrameworkBaseTargetFiles = (
         const secretEnv = 'process.env.BETTER_AGENT_SECRET ?? "your-secret-here"';
         const pluginImportLine =
             selection.plugins.length > 0
-                ? `import { ${selection.plugins.map((plugin) => pluginConfig[plugin].importName).join(", ")} } from "@better-agent/plugins";`
+                ? `import { ${[
+                      ...new Set(
+                          selection.plugins.flatMap(
+                              (plugin) =>
+                                  getPluginTemplateConfig(plugin, selection.sandboxClient)
+                                      .importNames,
+                          ),
+                      ),
+                  ].join(", ")} } from "@better-agent/plugins";`
                 : "";
-        const pluginBlock =
-            selection.plugins.length === 0
-                ? ""
-                : [
-                      "    plugins: [",
-                      selection.plugins
-                          .map((plugin) =>
-                              pluginConfig[plugin].setup
-                                  .split("\n")
-                                  .map((line) => `        ${line}`)
-                                  .join("\n"),
-                          )
-                          .join(",\n"),
-                      "    ],",
-                  ].join("\n");
+        const pluginBlock = renderPluginBlock(selection.plugins, selection.sandboxClient);
 
         return [
             {
@@ -562,23 +639,16 @@ export const getFrameworkBaseTargetFiles = (
               : 'process.env.BETTER_AGENT_SECRET ?? "your-secret-here"';
     const pluginImportLine =
         selection.plugins.length > 0
-            ? `import { ${selection.plugins.map((plugin) => pluginConfig[plugin].importName).join(", ")} } from "@better-agent/plugins";`
+            ? `import { ${[
+                  ...new Set(
+                      selection.plugins.flatMap(
+                          (plugin) =>
+                              getPluginTemplateConfig(plugin, selection.sandboxClient).importNames,
+                      ),
+                  ),
+              ].join(", ")} } from "@better-agent/plugins";`
             : "";
-    const pluginBlock =
-        selection.plugins.length === 0
-            ? ""
-            : [
-                  "    plugins: [",
-                  selection.plugins
-                      .map((plugin) =>
-                          pluginConfig[plugin].setup
-                              .split("\n")
-                              .map((line) => `        ${line}`)
-                              .join("\n"),
-                      )
-                      .join(",\n"),
-                  "    ],",
-              ].join("\n");
+    const pluginBlock = renderPluginBlock(selection.plugins, selection.sandboxClient);
 
     return [
         {

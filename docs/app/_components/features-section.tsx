@@ -117,10 +117,11 @@ function ProviderLogosSmall() {
     );
 }
 const pluginNames = [
-    "auth",
-    "ipAllowlist",
     "logging",
+    "auth",
+    "sandbox",
     "rateLimit",
+    "ipAllowlist",
     "guards",
     "middlewares",
     "endpoints",

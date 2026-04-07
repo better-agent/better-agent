@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import type { ServerToolDefinition, ToolRunContext } from "@better-agent/core";
-import type { SandboxDriver } from "../../src";
+import type { ToolRunContext } from "@better-agent/core";
+import type { SandboxClient } from "../../src";
 import { sandboxPlugin } from "../../src";
+
+type TestServerTool = {
+    kind: "server";
+    name: string;
+    handler: (args: unknown, ctx: ToolRunContext) => unknown;
+};
 
 const createDriver = () => {
     const created: string[] = [];
@@ -9,7 +15,7 @@ const createDriver = () => {
     const removed: Array<{ sandboxId: string; path: string }> = [];
     const killed: string[] = [];
 
-    const driver: SandboxDriver = {
+    const driver: SandboxClient = {
         async createSandbox() {
             const sandboxId = `sbx-${created.length + 1}`;
             created.push(sandboxId);
@@ -64,35 +70,43 @@ const createToolContext = (overrides: Partial<ToolRunContext> = {}): ToolRunCont
     ...overrides,
 });
 
-const getServerTool = (
+const getServerTool = async (
     plugin: ReturnType<typeof sandboxPlugin>,
     name: string,
-): ServerToolDefinition => {
-    const tools = Array.isArray(plugin.tools) ? plugin.tools : [];
-    const tool = tools.find(
-        (candidate): candidate is ServerToolDefinition =>
-            candidate.kind === "server" && candidate.name === name,
-    );
-
-    if (!tool) {
-        throw new Error(`Missing server tool '${name}'.`);
+): Promise<TestServerTool> => {
+    const source = plugin.tools;
+    if (!source) {
+        throw new Error("sandboxPlugin did not provide any tools.");
     }
 
-    return tool;
+    const resolved = Array.isArray(source)
+        ? source
+        : typeof source === "function"
+          ? await source(undefined)
+          : [];
+    const tools = Array.isArray(resolved) ? resolved : [resolved];
+
+    for (const tool of tools) {
+        if (tool.kind === "server" && tool.name === name) {
+            return tool;
+        }
+    }
+
+    throw new Error(`Missing server tool '${name}'.`);
 };
 
 describe("sandboxPlugin", () => {
     test("reuses one sandbox across one conversation when configured with client", async () => {
         const state = createDriver();
         const plugin = sandboxPlugin({ client: state.driver });
-        const execTool = getServerTool(plugin, "sandbox_exec");
+        const execTool = await getServerTool(plugin, "sandbox_exec");
 
         const first = await execTool.handler(
-            { cmd: "pwd" } as never,
+            { cmd: "pwd" },
             createToolContext({ runId: "run-1", parentMessageId: "msg-1" }),
         );
         const second = await execTool.handler(
-            { cmd: "ls" } as never,
+            { cmd: "ls" },
             createToolContext({ runId: "run-2", parentMessageId: "msg-2" }),
         );
 
@@ -116,10 +130,10 @@ describe("sandboxPlugin", () => {
     test("uses explicit sandbox ids without creating a managed session", async () => {
         const state = createDriver();
         const plugin = sandboxPlugin({ client: state.driver });
-        const execTool = getServerTool(plugin, "sandbox_exec");
+        const execTool = await getServerTool(plugin, "sandbox_exec");
 
         const result = await execTool.handler(
-            { sandboxId: "external-1", cmd: "echo hi" } as never,
+            { sandboxId: "external-1", cmd: "echo hi" },
             createToolContext(),
         );
 
@@ -135,14 +149,46 @@ describe("sandboxPlugin", () => {
     test("clears the stored sandbox when kill is called", async () => {
         const state = createDriver();
         const plugin = sandboxPlugin({ client: state.driver });
-        const createTool = getServerTool(plugin, "sandbox_create");
-        const killTool = getServerTool(plugin, "sandbox_kill");
-        const execTool = getServerTool(plugin, "sandbox_exec");
+        const createTool = await getServerTool(plugin, "sandbox_create");
+        const killTool = await getServerTool(plugin, "sandbox_kill");
+        const execTool = await getServerTool(plugin, "sandbox_exec");
 
-        await createTool.handler({} as never, createToolContext());
-        const killResult = await killTool.handler({} as never, createToolContext());
+        await createTool.handler({}, createToolContext());
+        const killResult = await killTool.handler({}, createToolContext());
         const nextExec = await execTool.handler(
-            { cmd: "whoami" } as never,
+            { cmd: "whoami" },
+            createToolContext({ runId: "run-2", parentMessageId: "msg-2" }),
+        );
+
+        expect(state.killed).toEqual(["sbx-1"]);
+        expect(killResult).toMatchObject({
+            sandboxId: "sbx-1",
+            killed: true,
+            clearedSessionKey: "conversation:conv-1",
+        });
+        expect(state.created).toEqual(["sbx-1", "sbx-2"]);
+        expect(nextExec).toMatchObject({
+            sandboxId: "sbx-2",
+            createdSandbox: true,
+        });
+    });
+
+    test("clears the stored sandbox when killing the managed sandbox by explicit id", async () => {
+        const state = createDriver();
+        const plugin = sandboxPlugin({ client: state.driver });
+        const createTool = await getServerTool(plugin, "sandbox_create");
+        const killTool = await getServerTool(plugin, "sandbox_kill");
+        const execTool = await getServerTool(plugin, "sandbox_exec");
+
+        const created = (await createTool.handler({}, createToolContext())) as {
+            sandboxId: string;
+        };
+        const killResult = await killTool.handler(
+            { sandboxId: created.sandboxId },
+            createToolContext(),
+        );
+        const nextExec = await execTool.handler(
+            { cmd: "whoami" },
             createToolContext({ runId: "run-2", parentMessageId: "msg-2" }),
         );
 
@@ -161,15 +207,15 @@ describe("sandboxPlugin", () => {
 
     test("does not reuse sandboxes when there is no conversation id", async () => {
         const state = createDriver();
-        const plugin = sandboxPlugin({ driver: state.driver });
-        const execTool = getServerTool(plugin, "sandbox_exec");
+        const plugin = sandboxPlugin({ client: state.driver });
+        const execTool = await getServerTool(plugin, "sandbox_exec");
 
         await execTool.handler(
-            { cmd: "pwd" } as never,
+            { cmd: "pwd" },
             createToolContext({ conversationId: undefined, runId: "run-1" }),
         );
         await execTool.handler(
-            { cmd: "ls" } as never,
+            { cmd: "ls" },
             createToolContext({
                 conversationId: undefined,
                 runId: "run-2",
@@ -180,41 +226,109 @@ describe("sandboxPlugin", () => {
         expect(state.created).toEqual(["sbx-1", "sbx-2"]);
     });
 
-    test("returns preview tokens when the client provides structured host info", async () => {
+    for (const testCase of [
+        {
+            name: "undefined",
+            sessionKey: () => undefined,
+        },
+        {
+            name: "null",
+            sessionKey: () => null,
+        },
+    ] as const) {
+        test(`does not reuse sandboxes when custom sessionKey returns ${testCase.name}`, async () => {
+            const state = createDriver();
+            const plugin = sandboxPlugin({
+                client: state.driver,
+                sessionKey: testCase.sessionKey,
+            });
+            const execTool = await getServerTool(plugin, "sandbox_exec");
+
+            await execTool.handler(
+                { cmd: "pwd" },
+                createToolContext({ runId: "run-1", parentMessageId: "msg-1" }),
+            );
+            await execTool.handler(
+                { cmd: "ls" },
+                createToolContext({ runId: "run-2", parentMessageId: "msg-2" }),
+            );
+
+            expect(state.created).toEqual(["sbx-1", "sbx-2"]);
+        });
+    }
+
+    test("reuses sandboxes when custom sessionKey returns a stable key", async () => {
         const state = createDriver();
-        state.driver.getHost = async (params) => ({
-            url: `https://${params.sandboxId}-${params.port}.example.test`,
-            token: "preview-token",
+        const plugin = sandboxPlugin({
+            client: state.driver,
+            sessionKey: ({ conversationId }) =>
+                conversationId ? `stable:${conversationId}` : undefined,
         });
+        const execTool = await getServerTool(plugin, "sandbox_exec");
 
-        const plugin = sandboxPlugin({ client: state.driver });
-        const createTool = getServerTool(plugin, "sandbox_create");
-        const getHostTool = getServerTool(plugin, "sandbox_get_host");
+        await execTool.handler(
+            { cmd: "pwd" },
+            createToolContext({ runId: "run-1", parentMessageId: "msg-1" }),
+        );
+        await execTool.handler(
+            { cmd: "ls" },
+            createToolContext({ runId: "run-2", parentMessageId: "msg-2" }),
+        );
 
-        await createTool.handler({} as never, createToolContext());
-        const result = await getHostTool.handler({ port: 3000 } as never, createToolContext());
-
-        expect(result).toMatchObject({
-            sandboxId: "sbx-1",
-            host: "https://sbx-1-3000.example.test",
-            token: "preview-token",
-        });
+        expect(state.created).toEqual(["sbx-1"]);
+        expect(state.commands).toEqual([
+            { sandboxId: "sbx-1", cmd: "pwd" },
+            { sandboxId: "sbx-1", cmd: "ls" },
+        ]);
     });
 
-    test("normalizes bare hostnames into https urls", async () => {
+    test("rejects whitespace-only explicit sandbox ids", async () => {
         const state = createDriver();
-        state.driver.getHost = async (params) => `${params.port}-${params.sandboxId}.example.test`;
-
         const plugin = sandboxPlugin({ client: state.driver });
-        const createTool = getServerTool(plugin, "sandbox_create");
-        const getHostTool = getServerTool(plugin, "sandbox_get_host");
+        const killTool = await getServerTool(plugin, "sandbox_kill");
 
-        await createTool.handler({} as never, createToolContext());
-        const result = await getHostTool.handler({ port: 3000 } as never, createToolContext());
-
-        expect(result).toMatchObject({
-            sandboxId: "sbx-1",
-            host: "https://3000-sbx-1.example.test",
+        expect(killTool.handler({ sandboxId: "   " }, createToolContext())).rejects.toMatchObject({
+            code: "VALIDATION_FAILED",
+            message: "`sandboxId` must be a non-empty string when provided.",
         });
+        expect(state.killed).toEqual([]);
     });
+
+    for (const testCase of [
+        {
+            name: "returns preview tokens when the client provides structured host info",
+            getHost: async (sandboxId: string, port: number) => ({
+                url: `https://${sandboxId}-${port}.example.test`,
+                token: "preview-token",
+            }),
+            expected: {
+                sandboxId: "sbx-1",
+                host: "https://sbx-1-3000.example.test",
+                token: "preview-token",
+            },
+        },
+        {
+            name: "normalizes bare hostnames into https urls",
+            getHost: async (sandboxId: string, port: number) => `${port}-${sandboxId}.example.test`,
+            expected: {
+                sandboxId: "sbx-1",
+                host: "https://3000-sbx-1.example.test",
+            },
+        },
+    ] as const) {
+        test(testCase.name, async () => {
+            const state = createDriver();
+            state.driver.getHost = async (params) =>
+                testCase.getHost(params.sandboxId, params.port);
+
+            const plugin = sandboxPlugin({ client: state.driver });
+            const createTool = await getServerTool(plugin, "sandbox_create");
+            const getHostTool = await getServerTool(plugin, "sandbox_get_host");
+
+            await createTool.handler({}, createToolContext());
+            const result = await getHostTool.handler({ port: 3000 }, createToolContext());
+
+            expect(result).toMatchObject(testCase.expected);
+        });
+    }
 });
