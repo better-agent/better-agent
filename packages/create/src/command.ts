@@ -13,6 +13,7 @@ import * as p from "./prompt";
 import {
     PLUGINS,
     PROVIDERS,
+    SANDBOX_CLIENTS,
     copyLocalTemplate,
     envTemplate,
     frameworkLabel,
@@ -23,8 +24,10 @@ import {
     isFrameworkId,
     isPluginId,
     isProviderId,
+    isSandboxClientId,
     pluginLabel,
     providerLabel,
+    sandboxClientLabel,
     supportsFrameworkStarterUi,
 } from "./templates";
 import type {
@@ -35,12 +38,14 @@ import type {
     InitOptions,
     PluginId,
     ProviderId,
+    SandboxClientId,
 } from "./types";
 
 type ResolvedSelection = {
     framework: FrameworkId;
     providers: ProviderId[];
     plugins: PluginId[];
+    sandboxClient?: SandboxClientId;
     starterUi: boolean;
 };
 
@@ -102,6 +107,43 @@ const parsePluginValues = (value: string | undefined): PluginId[] => {
         throw new Error(`Unsupported plugin list: ${invalid.join(", ")}.`);
     }
     return items as PluginId[];
+};
+
+const parseSandboxClientValue = (value: string | undefined): SandboxClientId => {
+    const sandboxClient = value?.trim();
+    if (!sandboxClient || !isSandboxClientId(sandboxClient)) {
+        throw new Error(`Unsupported sandbox client: ${value}.`);
+    }
+    return sandboxClient;
+};
+
+const resolveSandboxClient = async (
+    plugins: PluginId[],
+    options: InitOptions,
+): Promise<SandboxClientId | undefined> => {
+    if (!plugins.includes("sandbox")) {
+        return undefined;
+    }
+
+    if (options.sandboxClient) {
+        return options.sandboxClient;
+    }
+
+    if (options.yes) {
+        return "e2b";
+    }
+
+    return handleCancel(
+        await p.select<SandboxClientId>({
+            title: "Sandbox client",
+            message: "Which sandbox client should the scaffold use?",
+            initialValue: "e2b",
+            options: SANDBOX_CLIENTS.map((sandboxClient) => ({
+                label: sandboxClient.label,
+                value: sandboxClient.id,
+            })),
+        }),
+    );
 };
 
 const handleCancel = <T>(value: T | symbol): T => {
@@ -206,6 +248,10 @@ export const parseArgs = (argv: string[]): InitOptions => {
             for (const plugin of parsePluginValues(nextValue(arg))) {
                 plugins.add(plugin);
             }
+            continue;
+        }
+        if (arg === "--sandbox-client") {
+            options.sandboxClient = parseSandboxClientValue(nextValue(arg));
             continue;
         }
         if (arg === "--starter-ui") {
@@ -419,6 +465,7 @@ export const run = async (options: InitOptions): Promise<number> => {
                                     required: false,
                                 }),
                             ) ?? []) as PluginId[]),
+                    sandboxClient: undefined,
                     starterUi: false,
                 };
             } else {
@@ -454,9 +501,12 @@ export const run = async (options: InitOptions): Promise<number> => {
                                     required: false,
                                 }),
                             ) ?? []) as PluginId[]),
+                    sandboxClient: undefined,
                     starterUi: true,
                 };
             }
+
+            selection.sandboxClient = await resolveSandboxClient(selection.plugins, options);
 
             const state = detectDirectoryState(targetCwd);
             if (state.exists && !state.isEmpty) {
@@ -477,6 +527,11 @@ export const run = async (options: InitOptions): Promise<number> => {
                         ? selection.plugins.map(pluginLabel).join(", ")
                         : "none",
                 ],
+                ...(selection.sandboxClient
+                    ? ([["Sandbox", sandboxClientLabel(selection.sandboxClient)]] as Array<
+                          [string, string]
+                      >)
+                    : []),
                 ["Starter UI", selection.starterUi ? "Yes" : "No"],
             ];
             for (const [label, value] of reviewRows) {
@@ -559,6 +614,7 @@ export const run = async (options: InitOptions): Promise<number> => {
                                 required: false,
                             }),
                         ) ?? []) as PluginId[]),
+                sandboxClient: undefined,
                 starterUi: !supportsFrameworkStarterUi(framework)
                     ? false
                     : typeof options.starterUi === "boolean"
@@ -573,6 +629,8 @@ export const run = async (options: InitOptions): Promise<number> => {
                               }),
                           ),
             };
+
+            selection.sandboxClient = await resolveSandboxClient(selection.plugins, options);
 
             if (!isProjectDirectory(baseCwd)) {
                 const shouldCreate = options.yes
@@ -603,6 +661,11 @@ export const run = async (options: InitOptions): Promise<number> => {
                         ? selection.plugins.map(pluginLabel).join(", ")
                         : "none",
                 ],
+                ...(selection.sandboxClient
+                    ? ([["Sandbox", sandboxClientLabel(selection.sandboxClient)]] as Array<
+                          [string, string]
+                      >)
+                    : []),
                 ["Starter UI", selection.starterUi ? "Yes" : "No"],
             ];
             for (const [label, value] of reviewRows) {
@@ -618,7 +681,11 @@ export const run = async (options: InitOptions): Promise<number> => {
             targetCwd,
             selection.framework,
             detection.useSrcDir,
-            { providers: selection.providers, plugins: selection.plugins },
+            {
+                providers: selection.providers,
+                plugins: selection.plugins,
+                sandboxClient: selection.sandboxClient,
+            },
         );
         const starterUiFiles = selection.starterUi
             ? getFrameworkStarterUiFiles(
@@ -683,7 +750,10 @@ export const run = async (options: InitOptions): Promise<number> => {
         p.log.step("Update project files");
         renderStatus(
             ".env",
-            updateEnvFile(targetCwd, envTemplate(selection.providers, selection.plugins)).kind,
+            updateEnvFile(
+                targetCwd,
+                envTemplate(selection.providers, selection.plugins, selection.sandboxClient),
+            ).kind,
         );
         renderStatus(".gitignore", updateGitignore(targetCwd).kind);
         renderStatus(
@@ -693,6 +763,7 @@ export const run = async (options: InitOptions): Promise<number> => {
                 requiredPackageSpecs({
                     providers: selection.providers,
                     plugins: selection.plugins,
+                    sandboxClient: selection.sandboxClient,
                 }),
             ).kind,
         );

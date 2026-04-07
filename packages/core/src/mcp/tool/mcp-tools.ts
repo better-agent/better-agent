@@ -1,3 +1,5 @@
+import type { Event } from "../../events";
+import type { Awaitable } from "../../internal/types";
 import { TOOL_JSON_SCHEMA } from "../../tools/constants";
 import type { ServerToolDefinition, ToolHandler } from "../../tools/types";
 import type { MCPClient } from "./mcp-client";
@@ -38,7 +40,7 @@ function convertMCPTool(
     // The generated handler proxies execution back to the MCP server.
     const handler: ToolHandler<unknown, unknown> = async (
         input: unknown,
-        _ctx: { signal: AbortSignal; emit: (event: unknown) => Promise<void> },
+        _ctx: { signal: AbortSignal; emit: (event: Event) => Awaitable<void> },
     ) => {
         const result = await client.callTool({
             name: tool.name,

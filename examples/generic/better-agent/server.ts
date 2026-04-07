@@ -6,32 +6,32 @@ import {
     defineAgent,
 } from "@better-agent/core";
 
-import { createOpenAI } from "@better-agent/providers/openai";
 import { createAnthropic } from "@better-agent/providers/anthropic";
+import { createOpenAI } from "@better-agent/providers/openai";
 import { createXAI } from "@better-agent/providers/xai";
-import { rateLimitPlugin } from "@better-agent/plugins";
-
-const openaiProvider = createOpenAI({
-    apiKey: process.env.OPENAI_API_KEY ?? "your-openai-api-key",
-});
+import { sandboxPlugin, createE2BSandboxClient } from "@better-agent/plugins";
 
 const anthropicProvider = createAnthropic({
     apiKey: process.env.ANTHROPIC_API_KEY ?? "your-anthropic-api-key",
+});
+
+const openaiProvider = createOpenAI({
+    apiKey: process.env.OPENAI_API_KEY ?? "your-openai-api-key",
 });
 
 const xaiProvider = createXAI({
     apiKey: process.env.XAI_API_KEY ?? "your-xai-api-key",
 });
 
-const openai = defineAgent({
-    name: "openai",
-    model: openaiProvider.model("gpt-4.1"),
-    instruction: "You are a concise, practical assistant. Keep answers clear and direct.",
-});
-
 const anthropic = defineAgent({
     name: "anthropic",
     model: anthropicProvider.text("claude-sonnet-4-6"),
+    instruction: "You are a concise, practical assistant. Keep answers clear and direct.",
+});
+
+const openai = defineAgent({
+    name: "openai",
+    model: openaiProvider.model("gpt-4.1"),
     instruction: "You are a concise, practical assistant. Keep answers clear and direct.",
 });
 
@@ -42,11 +42,12 @@ const xai = defineAgent({
 });
 
 const app = betterAgent({
-    agents: [openai, anthropic, xai],
+    agents: [anthropic, openai, xai],
     plugins: [
-        rateLimitPlugin({
-            windowMs: 60_000,
-            max: 30,
+        sandboxPlugin({
+            client: createE2BSandboxClient({
+                apiKey: process.env.E2B_API_KEY ?? "your-e2b-api-key",
+            }),
         })
     ],
     persistence: {

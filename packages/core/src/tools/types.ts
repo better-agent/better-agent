@@ -234,8 +234,18 @@ export type BoundToolApprovalConfig<
  * Extra context passed to a tool handler at call time.
  */
 export interface ToolRunContext {
+    /** Active run id. */
+    runId: string;
+    /** Agent name for this run. */
+    agentName: string;
+    /** Shared conversation id, if present. */
+    conversationId?: string;
+    /** Parent assistant message that produced this tool call batch. */
+    parentMessageId: string;
     /** Abort signal for cancelling the active run. */
     signal: AbortSignal;
+    /** Run context value passed to the agent, when present. */
+    context?: unknown;
     /** Emits runtime events while the tool is running. */
     emit: (event: Event) => Awaitable<void>;
 }

@@ -13,7 +13,9 @@ export type InitMode = "create" | "patch";
 
 export type ProviderId = "anthropic" | "openai" | "xai";
 
-export type PluginId = "auth" | "ip-allowlist" | "logging" | "rate-limit";
+export type PluginId = "auth" | "ip-allowlist" | "logging" | "rate-limit" | "sandbox";
+
+export type SandboxClientId = "daytona" | "e2b";
 
 export interface DetectionResult {
     framework: FrameworkId | null;
@@ -34,6 +36,7 @@ export interface InitOptions {
     framework?: FrameworkId;
     providers?: ProviderId[];
     plugins?: PluginId[];
+    sandboxClient?: SandboxClientId;
     yes?: boolean;
     starterUi?: boolean;
 }
