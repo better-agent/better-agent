@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/black.css";
 @import "fumadocs-ui/css/preset.css";
 
 :root {
@@ -78,7 +78,7 @@ html.dark {
     --background: #000000;
     --foreground: #ffffff;
     --muted-foreground: rgba(255, 255, 255, 0.68);
-    --panel: #050505;
+    --panel: #000000;
     --panel-muted: #030303;
     --panel-elevated: #0a0a0a;
     --line: rgba(255, 255, 255, 0.08);
@@ -120,16 +120,16 @@ html.dark {
     --sidebar-bg: #000000;
     --sidebar-border: rgba(255, 255, 255, 0.06);
     --sidebar-divider: rgba(255, 255, 255, 0.04);
-    --sidebar-search-text: oklch(0.709 0.01 56.259);
-    --sidebar-search-placeholder: oklch(0.709 0.01 56.259 / 0.6);
+    --sidebar-search-text: #abb2bf;
+    --sidebar-search-placeholder: rgba(171, 178, 191, 0.5);
     --sidebar-kbd-border: rgba(255, 255, 255, 0.08);
     --sidebar-kbd-bg: transparent;
-    --sidebar-kbd-text: oklch(0.709 0.01 56.259 / 0.6);
-    --sidebar-section-label: oklch(0.709 0.01 56.259 / 0.7);
-    --sidebar-item-text: oklch(0.709 0.01 56.259);
-    --sidebar-active-bg: oklch(0.985 0.001 106.423 / 0.08);
-    --sidebar-active-text: oklch(0.985 0.001 106.423);
-    --sidebar-hover-bg: oklch(0.268 0.007 34.298 / 0.5);
+    --sidebar-kbd-text: rgba(171, 178, 191, 0.6);
+    --sidebar-section-label: rgba(171, 178, 191, 0.7);
+    --sidebar-item-text: #abb2bf;
+    --sidebar-active-bg: rgba(255, 255, 255, 0.08);
+    --sidebar-active-text: #ffffff;
+    --sidebar-hover-bg: rgba(255, 255, 255, 0.04);
 }
 .dark [role="dialog"] {
     --color-fd-popover: hsl(0, 0%, 3%);
@@ -146,6 +146,18 @@ html.dark {
 
 .dark [data-radix-dialog-overlay] {
     background-color: hsla(0, 0%, 0%, 0.55);
+}
+
+.dark .shiki {
+    background-color: #000000 !important;
+    border-color: rgba(255, 255, 255, 0.06);
+    border-radius: 0 !important;
+}
+
+.shiki {
+    background-color: #ffffff !important;
+    border-color: #ffffff;
+    border-radius: 0 !important;
 }
 
 body {

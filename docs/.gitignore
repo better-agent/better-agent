@@ -17,6 +17,7 @@
 /.next/
 /out/
 /.generated/
+/.source/
 
 # production
 /build
