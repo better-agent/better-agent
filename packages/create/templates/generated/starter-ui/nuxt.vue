@@ -60,7 +60,7 @@ const send = async () => {
           </div>
         </section>
 
-        <form class="grid gap-3" @submit.prevent="void send()">
+        <form class="grid gap-3" @submit.prevent="send">
           <textarea v-model="input" placeholder="Ask something..." aria-label="Message" class="min-h-[96px] w-full resize-none border border-[color:var(--border)] bg-black px-3 py-2.5 text-sm leading-6 text-[color:var(--foreground)] outline-none transition placeholder:text-[color:var(--muted)] focus:border-[color:var(--border-strong)]" />
           <div class="flex flex-wrap items-center justify-end gap-3">
             <div class="flex items-center gap-2">

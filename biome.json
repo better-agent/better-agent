@@ -52,22 +52,11 @@
                     }
                 }
             }
-        },
-        {
-            "include": ["packages/create/templates/**"],
-            "formatter": {
-                "enabled": false
-            },
-            "organizeImports": {
-                "enabled": false
-            },
-            "linter": {
-                "enabled": false
-            }
         }
     ],
     "files": {
         "ignore": [
+            "**/templates/**",
             "examples/**",
             "docs/.source/**",
             "**/dist/**",

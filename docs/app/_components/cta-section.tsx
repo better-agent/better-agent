@@ -185,6 +185,7 @@ function TerminalAnimation({ command, visible }: { command: string; visible: boo
                             │ ◼ Rate Limit
                         </span>
                         <span className="opacity-50">│ ◻ Auth</span>
+                        <span className="opacity-50">│ ◻ Sandbox</span>
                         <span className="opacity-50">│ ◻ IP Allowlist</span>
                         <span className="opacity-50">│ ◻ Logging</span>
                     </>
