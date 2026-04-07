@@ -1,44 +1,48 @@
 {
-    "name": "better-agent",
-    "private": true,
-    "packageManager": "bun@1.3.3",
-    "type": "module",
-    "scripts": {
-        "dev": "turbo dev --filter='./packages/*'",
-        "build": "turbo build --filter='./packages/*'",
-        "lint": "biome check . --write",
-        "lint:ci": "biome check .",
-        "lint:types": "turbo run lint:types --filter='./packages/*'",
-        "lint:packages": "turbo run lint:package --filter='./packages/*'",
-        "check": "bun run lint:ci && bun run typecheck && bun run build",
-        "typecheck": "turbo run typecheck --filter='./packages/*'",
-        "format": "biome format --write .",
-        "clean": "turbo clean && rimraf \"node_modules\" \"**/node_modules\" \"**/dist\" \".turbo\"",
-        "bump": "bumpp",
-        "release": "bun run build && bun run bump --no-push",
-        "release:beta": "bun run build && bumpp --preid beta --release prerelease --no-push",
-        "release:canary": "bun run build && bumpp --preid canary --release prerelease --no-push"
-    },
-    "devDependencies": {
-        "@arethetypeswrong/cli": "^0.18.2",
-        "@biomejs/biome": "^1.9.4",
-        "bumpp": "^10.4.1",
-        "publint": "^0.3.17",
-        "rimraf": "^6.1.0",
-        "tinyglobby": "^0.2.15",
-        "tsdown": "^0.20.3",
-        "turbo": "^2.6.0",
-        "typescript": "5.6.3"
-    },
-    "workspaces": ["packages/*", "examples/*", "docs"],
-    "engines": {
-        "node": ">=20",
-        "bun": ">=1.3.3"
-    },
-    "dependencies": {
-        "@better-agent/client": "workspace:*",
-        "@better-agent/core": "workspace:*",
-        "@better-agent/plugins": "workspace:*",
-        "@better-agent/providers": "workspace:*"
-    }
+  "name": "better-agent",
+  "private": true,
+  "packageManager": "bun@1.3.3",
+  "type": "module",
+  "scripts": {
+    "dev": "turbo dev --filter='./packages/*'",
+    "build": "turbo build --filter='./packages/*'",
+    "lint": "biome check . --write",
+    "lint:ci": "biome check .",
+    "lint:types": "turbo run lint:types --filter='./packages/*'",
+    "lint:packages": "turbo run lint:package --filter='./packages/*'",
+    "check": "bun run lint:ci && bun run typecheck && bun run build",
+    "typecheck": "turbo run typecheck --filter='./packages/*'",
+    "format": "biome format --write .",
+    "clean": "turbo clean && rimraf \"node_modules\" \"**/node_modules\" \"**/dist\" \".turbo\"",
+    "bump": "bumpp",
+    "release": "bun run build && bun run bump --no-push --no-commit --no-tag",
+    "release:beta": "bun run build && bumpp --preid beta --release prerelease --no-commit --no-tag --no-push",
+    "release:canary": "bun run build && bumpp --preid canary --release prerelease --no-commit --no-tag --no-push"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
+    "@biomejs/biome": "^1.9.4",
+    "bumpp": "^10.4.1",
+    "publint": "^0.3.17",
+    "rimraf": "^6.1.0",
+    "tinyglobby": "^0.2.15",
+    "tsdown": "^0.20.3",
+    "turbo": "^2.6.0",
+    "typescript": "5.6.3"
+  },
+  "workspaces": [
+    "packages/*",
+    "examples/*",
+    "docs"
+  ],
+  "engines": {
+    "node": ">=20",
+    "bun": ">=1.3.3"
+  },
+  "dependencies": {
+    "@better-agent/client": "workspace:*",
+    "@better-agent/core": "workspace:*",
+    "@better-agent/plugins": "workspace:*",
+    "@better-agent/providers": "workspace:*"
+  }
 }
