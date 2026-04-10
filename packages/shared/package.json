@@ -1,6 +1,6 @@
 {
     "name": "@better-agent/shared",
-    "version": "0.1.0-beta.2",
+    "version": "0.1.0-canary.5",
     "description": "Shared utilities for Better Agent",
     "license": "MIT",
     "repository": {
