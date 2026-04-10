@@ -2,6 +2,8 @@ import type {
     ConversationItem,
     GenerativeModelInputItem,
     GenerativeModelInputMessagePart,
+    GenerativeModelProviderToolResult,
+    GenerativeModelToolCallResult,
 } from "@better-agent/core/providers";
 import type { UIMessage, UIMessagePart } from "../types/ui";
 
@@ -384,6 +386,12 @@ const contentToUIParts = (content: string | unknown[]): UIMessagePart[] => {
         .filter((part): part is UIMessagePart => part !== null);
 };
 
+const isToolResultConversationItem = (
+    item: ConversationItem,
+): item is GenerativeModelToolCallResult | GenerativeModelProviderToolResult =>
+    item.type === "provider-tool-result" ||
+    (item.type === "tool-call" && Object.prototype.hasOwnProperty.call(item, "result"));
+
 /** Converts model input messages back into UI messages. */
 export const fromModelMessages = (
     messages: GenerativeModelInputItem[],
@@ -476,7 +484,7 @@ export const fromConversationItems = (
             continue;
         }
 
-        if ("arguments" in item) {
+        if (item.type === "tool-call" && !isToolResultConversationItem(item)) {
             const part: UIMessagePart = {
                 type: "tool-call",
                 callId: item.callId,

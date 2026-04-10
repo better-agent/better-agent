@@ -523,6 +523,64 @@ describe("client transport", () => {
         assert.deepEqual(hydrated, stripToolTarget(liveState.messages));
     });
 
+    test("fromConversationItems treats tool-call results with optional arguments as results", () => {
+        const hydrated = fromConversationItems([
+            {
+                type: "message",
+                role: "assistant",
+                content: "Checking weather...",
+            },
+            {
+                type: "tool-call",
+                callId: "call_1",
+                name: "get_weather",
+                arguments: '{"location":"Addis Ababa","unit":"Celsius"}',
+            },
+            {
+                type: "tool-call",
+                callId: "call_1",
+                name: "get_weather",
+                arguments: '{"location":"Addis Ababa","unit":"Celsius"}',
+                result: {
+                    type: "tool_error",
+                    message: "fetch failed",
+                },
+                isError: true,
+            },
+        ]);
+
+        assert.deepEqual(hydrated, [
+            {
+                localId: hydrated[0]?.localId,
+                role: "assistant",
+                parts: [
+                    {
+                        type: "text",
+                        text: "Checking weather...",
+                        state: "complete",
+                    },
+                    {
+                        type: "tool-call",
+                        callId: "call_1",
+                        name: "get_weather",
+                        args: '{"location":"Addis Ababa","unit":"Celsius"}',
+                        status: "error",
+                        state: "completed",
+                    },
+                    {
+                        type: "tool-result",
+                        callId: "call_1",
+                        result: {
+                            type: "tool_error",
+                            message: "fetch failed",
+                        },
+                        status: "error",
+                    },
+                ],
+            },
+        ]);
+    });
+
     test("getMessagesFromResponse synthesizes completed tool calls for standalone provider tool results", () => {
         const messages = getMessagesFromResponse({
             output: [
