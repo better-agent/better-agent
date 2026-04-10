@@ -18,7 +18,5 @@ Docs: https://www.better-agent.com/docs
    `ANTHROPIC_API_KEY=...`
    `XAI_API_KEY=...`
    `OPENROUTER_API_KEY=...`
-   `OPENROUTER_SITE_URL=http://localhost:3000`
-   `OPENROUTER_APP_NAME=better-agent-nextjs-demo`
 2. Install dependencies with your package manager.
 3. Start the app with `npm run dev`.
