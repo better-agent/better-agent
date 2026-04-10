@@ -4,14 +4,23 @@ import { client } from "@/better-agent/client";
 import { useAgent } from "@better-agent/client/react";
 import { useState } from "react";
 
+const AGENTS = [
+  { id: "openai", label: "OpenAI", path: "/agents/openai" },
+  { id: "anthropic", label: "Anthropic", path: "/agents/anthropic" },
+  { id: "xai", label: "xAI", path: "/agents/xai" },
+  { id: "openrouter", label: "OpenRouter", path: "/agents/openrouter" },
+] as const;
+
 export default function Page() {
   const [input, setInput] = useState("");
+  const [agent, setAgent] = useState<(typeof AGENTS)[number]["id"]>("openrouter");
   const { messages, status, error, sendMessage, stop } = useAgent(client, {
-    agent: "anthropic",
+    agent,
     conversationId: "main",
     hydrateFromServer: true,
     resume: true,
   });
+  const activeAgent = AGENTS.find((entry) => entry.id === agent) ?? AGENTS[0];
 
   return (
     <main className="min-h-screen bg-[color:var(--background)] px-4 py-6 text-[color:var(--foreground)] sm:px-6 sm:py-8">
@@ -23,16 +32,34 @@ export default function Page() {
           <h1 className="m-0 text-[1.85rem] font-semibold tracking-[-0.05em] text-white sm:text-[2.2rem]">
             Next.js Starter Chat
           </h1>
+          <div className="flex flex-wrap gap-2">
+            {AGENTS.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => setAgent(entry.id)}
+                className={`border px-3 py-2 text-sm transition ${
+                  entry.id === agent
+                    ? "border-white bg-white text-black"
+                    : "border-[color:var(--border)] bg-[color:var(--panel)] text-[color:var(--foreground)] hover:border-[color:var(--border-strong)]"
+                }`}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-2 border border-[color:var(--border)] bg-[color:var(--panel)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.2em] text-[color:var(--muted)]">
             <span className="text-white/55">&gt;_</span>
-            <span className="text-white/78">/agents/openai</span>
+            <span className="text-white/78">{activeAgent.path}</span>
           </div>
         </header>
 
         <section className="grid gap-3 border border-[color:var(--border)] bg-[color:var(--panel)] p-3 sm:p-4">
           <div className="flex items-center justify-between gap-3 font-mono text-[11px] uppercase tracking-[0.22em] text-[color:var(--muted)]">
             <span>conversation main</span>
-            <span>{status}</span>
+            <span>
+              {activeAgent.label} · {status}
+            </span>
           </div>
 
           <section

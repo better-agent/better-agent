@@ -26,6 +26,10 @@
         "./xai": {
             "types": "./dist/xai/index.d.mts",
             "import": "./dist/xai/index.mjs"
+        },
+        "./openrouter": {
+            "types": "./dist/openrouter/index.d.mts",
+            "import": "./dist/openrouter/index.mjs"
         }
     },
     "scripts": {

@@ -19,7 +19,11 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@better-agent/providers/openai": ["../../packages/providers/src/openai/index.ts"],
+      "@better-agent/providers/anthropic": ["../../packages/providers/src/anthropic/index.ts"],
+      "@better-agent/providers/xai": ["../../packages/providers/src/xai/index.ts"],
+      "@better-agent/providers/openrouter": ["../../packages/providers/src/openrouter/index.ts"]
     }
   },
   "include": [

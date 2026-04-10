@@ -8,6 +8,7 @@ import {
 
 import { createOpenAI } from "@better-agent/providers/openai";
 import { createAnthropic } from "@better-agent/providers/anthropic";
+import { createOpenRouter } from "@better-agent/providers/openrouter";
 import { createXAI } from "@better-agent/providers/xai";
 import {
   rateLimitPlugin,
@@ -25,6 +26,13 @@ const anthropicProvider = createAnthropic({
 
 const xaiProvider = createXAI({
   apiKey: process.env.XAI_API_KEY ?? "your-xai-api-key",
+});
+
+const openrouterProvider = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY ?? "your-openrouter-api-key",
+  siteURL:
+    process.env.OPENROUTER_SITE_URL ?? "http://localhost:3000",
+  appName: process.env.OPENROUTER_APP_NAME ?? "better-agent-nextjs-demo",
 });
 
 const openai = defineAgent({
@@ -48,8 +56,15 @@ const xai = defineAgent({
     "You are a concise, practical assistant. Keep answers clear and direct.",
 });
 
+const openrouter = defineAgent({
+  name: "openrouter",
+  model: openrouterProvider.text("openai/gpt-5.4-mini"),
+  instruction:
+    "You are a concise, practical assistant. Keep answers clear and direct.",
+});
+
 const app = betterAgent({
-  agents: [openai, anthropic, xai],
+  agents: [openai, anthropic, xai, openrouter],
   plugins: [
     rateLimitPlugin({
       windowMs: 60_000,
