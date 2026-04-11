@@ -68,39 +68,40 @@ const providerToolLifecycleEvents = (params: {
     runId?: string;
     agentName?: string;
     toolTarget?: "server" | "client" | "hosted";
-}) => [
-    {
-        type: Events.TOOL_CALL_START,
-        parentMessageId: params.messageId,
-        toolCallId: params.toolCallId,
-        toolCallName: params.toolCallName,
-        runId: params.runId ?? "",
-        agentName: params.agentName ?? "",
-        toolTarget: params.toolTarget ?? "server",
-        timestamp: Date.now(),
-    },
-    {
-        type: Events.TOOL_CALL_ARGS,
-        parentMessageId: params.messageId,
-        toolCallId: params.toolCallId,
-        toolCallName: params.toolCallName,
-        delta: params.args,
-        runId: params.runId ?? "",
-        agentName: params.agentName ?? "",
-        toolTarget: params.toolTarget ?? "server",
-        timestamp: Date.now(),
-    },
-    {
-        type: Events.TOOL_CALL_END,
-        parentMessageId: params.messageId,
-        toolCallId: params.toolCallId,
-        toolCallName: params.toolCallName,
-        runId: params.runId ?? "",
-        agentName: params.agentName ?? "",
-        toolTarget: params.toolTarget ?? "server",
-        timestamp: Date.now(),
-    },
-] satisfies Event[];
+}) =>
+    [
+        {
+            type: Events.TOOL_CALL_START,
+            parentMessageId: params.messageId,
+            toolCallId: params.toolCallId,
+            toolCallName: params.toolCallName,
+            runId: params.runId ?? "",
+            agentName: params.agentName ?? "",
+            toolTarget: params.toolTarget ?? "server",
+            timestamp: Date.now(),
+        },
+        {
+            type: Events.TOOL_CALL_ARGS,
+            parentMessageId: params.messageId,
+            toolCallId: params.toolCallId,
+            toolCallName: params.toolCallName,
+            delta: params.args,
+            runId: params.runId ?? "",
+            agentName: params.agentName ?? "",
+            toolTarget: params.toolTarget ?? "server",
+            timestamp: Date.now(),
+        },
+        {
+            type: Events.TOOL_CALL_END,
+            parentMessageId: params.messageId,
+            toolCallId: params.toolCallId,
+            toolCallName: params.toolCallName,
+            runId: params.runId ?? "",
+            agentName: params.agentName ?? "",
+            toolTarget: params.toolTarget ?? "server",
+            timestamp: Date.now(),
+        },
+    ] satisfies Event[];
 
 describe("tool execution", () => {
     test("run reuses provider-emitted assistant message id for tool parent linkage", async () => {
