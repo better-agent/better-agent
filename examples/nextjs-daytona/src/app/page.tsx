@@ -69,58 +69,57 @@ const formatJson = (value: unknown) => {
 
 const getToolResultSummary = (toolName: string | undefined, result: unknown) => {
   if (!result || typeof result !== "object") {
-    return "工具执行完成";
+    return "Tool execution completed";
   }
 
   const payload = result as ToolResultPayload;
 
   if (payload.type === "tool_error") {
-    return payload.message ?? "工具执行失败";
+    return payload.message ?? "Tool execution failed";
   }
 
   if (toolName === "sandbox_create") {
     if (typeof payload.sandboxId === "string" && payload.sandboxId.length > 0) {
-      return `已创建沙盒 ${payload.sandboxId}`;
+      return `Sandbox created: ${payload.sandboxId}`;
     }
-
-    return "沙盒创建完成";
+    return "Sandbox creation completed";
   }
 
   if (toolName === "sandbox_list_files") {
-    return `已列出 ${payload.entries?.length ?? 0} 个条目`;
+    return `Listed ${payload.entries?.length ?? 0} entries`;
   }
 
   if (toolName === "sandbox_exec") {
-    return `命令执行完成${typeof payload.exitCode === "number" ? `，退出码 ${payload.exitCode}` : ""}`;
+    return `Command executed${typeof payload.exitCode === "number" ? `, exit code ${payload.exitCode}` : ""}`;
   }
 
   if (toolName === "sandbox_write_file") {
-    return typeof payload.path === "string" ? `已写入 ${payload.path}` : "文件写入完成";
+    return typeof payload.path === "string" ? `Wrote file ${payload.path}` : "File write completed";
   }
 
   if (toolName === "sandbox_read_file") {
-    return typeof payload.path === "string" ? `已读取 ${payload.path}` : "文件读取完成";
+    return typeof payload.path === "string" ? `Read file ${payload.path}` : "File read completed";
   }
 
   if (toolName === "sandbox_make_dir") {
-    return typeof payload.path === "string" ? `已创建目录 ${payload.path}` : "目录创建完成";
+    return typeof payload.path === "string" ? `Created directory ${payload.path}` : "Directory creation completed";
   }
 
   if (toolName === "sandbox_remove_path") {
-    return typeof payload.path === "string" ? `已删除 ${payload.path}` : "路径删除完成";
+    return typeof payload.path === "string" ? `Deleted path ${payload.path}` : "Path deletion completed";
   }
 
   if (toolName === "sandbox_get_host") {
-    return typeof payload.url === "string" ? `已暴露预览地址 ${payload.url}` : "预览地址已生成";
+    return typeof payload.url === "string" ? `Preview URL: ${payload.url}` : "Preview URL generated";
   }
 
   if (toolName === "sandbox_kill") {
     return typeof payload.sandboxId === "string"
-      ? `已终止沙盒 ${payload.sandboxId}`
-      : "沙盒已终止";
+      ? `Sandbox terminated: ${payload.sandboxId}`
+      : "Sandbox terminated";
   }
 
-  return "工具执行完成";
+  return "Tool execution completed";
 };
 
 const getToolStatusLabel = (part: ToolCallPart) => {
@@ -169,7 +168,7 @@ export default function Home() {
 
         <section className="grid gap-3 border border-white/10 bg-white/5 p-3 sm:p-4">
           <div className="flex items-center justify-between gap-3 font-mono text-[11px] uppercase tracking-[0.22em] text-white/55">
-            <span>conversation main</span>
+            <span>Conversation Main</span>
             <span>{status}</span>
           </div>
 
@@ -179,7 +178,7 @@ export default function Home() {
           >
             {messages.length === 0 ? (
               <div className="grid place-items-center border border-dashed border-white/10 px-4 py-12 text-center text-sm leading-6 text-white/55">
-                No messages yet.
+                No Messages Yet.
               </div>
             ) : (
               <div className="grid content-start gap-3 self-start">
@@ -280,7 +279,7 @@ export default function Home() {
                       toolCallParts.length === 0 &&
                       toolResultParts.length === 0 ? (
                         <p className="m-0 mt-1.5 whitespace-pre-wrap text-white/55">
-                          No renderable content
+                          No Renderable Content
                         </p>
                       ) : null}
                     </article>
@@ -307,7 +306,7 @@ export default function Home() {
             <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Create a sandbox and run `node -v`"
+              placeholder="Create a Sandbox and Run `node -v`"
               aria-label="Message"
               className="min-h-[96px] w-full resize-none border border-white/10 bg-black px-3 py-2.5 text-sm leading-6 text-white outline-none transition placeholder:text-white/40 focus:border-white/20"
             />
