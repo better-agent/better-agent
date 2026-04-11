@@ -178,17 +178,20 @@ describe("createDaytonaSandboxClient", () => {
             apiUrl: "https://daytona.example",
             target: "us",
             language: "typescript",
+            public: true,
+        });
+
+        const created = await client.createSandbox({
             template: "snapshot-1",
             envs: { NODE_ENV: "test" },
             metadata: { team: "plugins" },
-            public: true,
-            autoStopInterval: 60,
-            autoArchiveInterval: 120,
-            autoDeleteInterval: 240,
-            timeoutMs: 12_000,
+            startupTimeoutMs: 12_000,
+            lifecycle: {
+                idleStopMs: 60 * 60_000,
+                archiveAfterMs: 120 * 60_000,
+                deleteAfterMs: 240 * 60_000,
+            },
         });
-
-        const created = await client.createSandbox();
         const command = await client.runCommand({
             sandboxId: created.sandboxId,
             cmd: "pwd",
@@ -306,7 +309,6 @@ describe("createDaytonaSandboxClient", () => {
         }));
 
         const client = createDaytonaSandboxClient({
-            template: "image-default",
             templateKind: "image",
             language: "javascript",
         });
@@ -315,6 +317,9 @@ describe("createDaytonaSandboxClient", () => {
             template: "node:20",
             envs: { MODE: "image" },
             metadata: { owner: "plugins" },
+            lifecycle: {
+                idleStopMs: 15 * 60_000,
+            },
         });
 
         expect(createCalls).toEqual([
@@ -322,19 +327,23 @@ describe("createDaytonaSandboxClient", () => {
                 language: "javascript",
                 envVars: { MODE: "image" },
                 labels: { owner: "plugins" },
-                image: "image-default",
+                autoStopInterval: 15,
+                image: "node:20",
             },
         ]);
     });
 
-    test("prefers configured snapshot template over create overrides", async () => {
-        const createCalls: Array<Record<string, unknown> | undefined> = [];
-        const sandbox = createSandboxStub({ id: "daytona-snapshot" });
+    test("forwards shared create fields from createSandbox params", async () => {
+        const createCalls: Array<{
+            params?: Record<string, unknown>;
+            options?: Record<string, unknown>;
+        }> = [];
+        const sandbox = createSandboxStub({ id: "daytona-fallback" });
 
         mock.module("@daytonaio/sdk", () => ({
             Daytona: class {
-                async create(params?: Record<string, unknown>) {
-                    createCalls.push(params);
+                async create(params?: Record<string, unknown>, options?: Record<string, unknown>) {
+                    createCalls.push({ params, options });
                     return sandbox;
                 }
 
@@ -344,29 +353,30 @@ describe("createDaytonaSandboxClient", () => {
             },
         }));
 
-        const client = createDaytonaSandboxClient({
-            template: "snapshot-default",
-            templateKind: "snapshot",
-            language: "typescript",
-        });
+        const client = createDaytonaSandboxClient();
 
         await client.createSandbox({
-            template: "snapshot-override",
-            envs: { MODE: "snapshot" },
+            template: "input-template",
+            envs: { MODE: "input" },
+            metadata: { owner: "input" },
+            startupTimeoutMs: 2_000,
         });
 
         expect(createCalls).toEqual([
             {
-                language: "typescript",
-                envVars: { MODE: "snapshot" },
-                snapshot: "snapshot-default",
+                params: {
+                    envVars: { MODE: "input" },
+                    labels: { owner: "input" },
+                    snapshot: "input-template",
+                },
+                options: { timeout: 2 },
             },
         ]);
     });
 
-    test("prefers explicit snapshot and image config over template-derived values", async () => {
+    test("converts shared lifecycle fields to Daytona provider intervals", async () => {
         const createCalls: Array<Record<string, unknown> | undefined> = [];
-        const sandbox = createSandboxStub({ id: "daytona-explicit" });
+        const sandbox = createSandboxStub({ id: "daytona-lifecycle-create" });
 
         mock.module("@daytonaio/sdk", () => ({
             Daytona: class {
@@ -381,19 +391,21 @@ describe("createDaytonaSandboxClient", () => {
             },
         }));
 
-        const client = createDaytonaSandboxClient({
-            template: "template-ignored",
-            templateKind: "snapshot",
-            snapshot: "snapshot-explicit",
-            image: "image-explicit",
-        });
+        const client = createDaytonaSandboxClient();
 
-        await client.createSandbox();
+        await client.createSandbox({
+            lifecycle: {
+                idleStopMs: 30_000,
+                archiveAfterMs: 61_000,
+                deleteAfterMs: 120_000,
+            },
+        });
 
         expect(createCalls).toEqual([
             {
-                snapshot: "snapshot-explicit",
-                image: "image-explicit",
+                autoStopInterval: 1,
+                autoArchiveInterval: 2,
+                autoDeleteInterval: 2,
             },
         ]);
     });
@@ -434,9 +446,9 @@ describe("createDaytonaSandboxClient", () => {
             },
         }));
 
-        const client = createDaytonaSandboxClient({ timeoutMs: 1 });
+        const client = createDaytonaSandboxClient();
 
-        await client.createSandbox();
+        await client.createSandbox({ startupTimeoutMs: 1 });
         const command = await client.runCommand({
             sandboxId: "daytona-1",
             cmd: "echo tiny",

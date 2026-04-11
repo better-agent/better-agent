@@ -95,7 +95,9 @@ const normalizeFileEntries = (files: DaytonaFileInfo[]): SandboxFileEntry[] =>
         type: entry.type ?? (entry.isDir ? "directory" : "file"),
     }));
 
-/** Creates a sandbox client backed by the Daytona SDK. */
+/**
+ * Creates a sandbox client backed by the Daytona SDK.
+ */
 export function createDaytonaSandboxClient(config: DaytonaSandboxClientConfig = {}): SandboxClient {
     const clientConfig = removeUndefined({
         apiKey: config.apiKey,
@@ -103,29 +105,35 @@ export function createDaytonaSandboxClient(config: DaytonaSandboxClientConfig = 
         target: config.target,
     });
 
+    const toProviderMinutes = (value: number | undefined): number | undefined =>
+        value !== undefined ? Math.max(1, Math.ceil(value / 60_000)) : undefined;
+
     const buildCreateParams = (overrides?: {
         template?: string;
+        lifecycle?: {
+            idleStopMs?: number;
+            archiveAfterMs?: number;
+            deleteAfterMs?: number;
+        };
         envs?: Record<string, string>;
         metadata?: Record<string, string>;
     }) => {
-        const template = config.template ?? overrides?.template;
+        const template = overrides?.template;
         const templateKind = config.templateKind ?? "snapshot";
 
         return removeUndefined({
             language: config.language,
-            envVars: overrides?.envs ?? config.envs,
-            labels: overrides?.metadata ?? config.metadata,
+            envVars: overrides?.envs,
+            labels: overrides?.metadata,
             public: config.public,
-            autoStopInterval: config.autoStopInterval,
-            autoArchiveInterval: config.autoArchiveInterval,
-            autoDeleteInterval: config.autoDeleteInterval,
+            autoStopInterval: toProviderMinutes(overrides?.lifecycle?.idleStopMs),
+            autoArchiveInterval: toProviderMinutes(overrides?.lifecycle?.archiveAfterMs),
+            autoDeleteInterval: toProviderMinutes(overrides?.lifecycle?.deleteAfterMs),
             ...(template !== undefined
                 ? templateKind === "image"
                     ? { image: template }
                     : { snapshot: template }
                 : {}),
-            ...(config.snapshot !== undefined ? { snapshot: config.snapshot } : {}),
-            ...(config.image !== undefined ? { image: config.image } : {}),
         });
     };
 
@@ -176,7 +184,7 @@ export function createDaytonaSandboxClient(config: DaytonaSandboxClientConfig = 
 
         async createSandbox(params) {
             const client = await getClient();
-            const timeout = toSeconds(params?.timeoutMs ?? config.timeoutMs);
+            const timeout = toSeconds(params?.startupTimeoutMs);
             const sandbox = await client.create(buildCreateParams(params), {
                 ...(timeout !== undefined ? { timeout } : {}),
             });
@@ -291,7 +299,9 @@ export function createDaytonaSandboxClient(config: DaytonaSandboxClientConfig = 
                     {
                         context: { sandboxId: params.sandboxId },
                         trace: [
-                            { at: "plugins.sandbox.createDaytonaSandboxClient.archiveSandbox" },
+                            {
+                                at: "plugins.sandbox.createDaytonaSandboxClient.archiveSandbox",
+                            },
                         ],
                     },
                 );

@@ -4,12 +4,23 @@ import type { ToolApprovalConfig } from "@better-agent/core";
 export interface SandboxCreateParams {
     /** Template, snapshot, or image to create the sandbox from. */
     template?: string;
-    /** Timeout in milliseconds. */
-    timeoutMs?: number;
+    /** Maximum time to wait for the sandbox to become ready. */
+    startupTimeoutMs?: number;
     /** Environment variables for the sandbox. */
     envs?: Record<string, string>;
     /** Metadata or labels for the sandbox. */
     metadata?: Record<string, string>;
+    /** Shared lifecycle controls for the created sandbox. */
+    lifecycle?: {
+        /** Maximum lifetime for the sandbox. */
+        ttlMs?: number;
+        /** Stop the sandbox after this much inactivity. */
+        idleStopMs?: number;
+        /** Archive the sandbox this long after it stops. */
+        archiveAfterMs?: number;
+        /** Delete the sandbox this long after it stops. */
+        deleteAfterMs?: number;
+    };
 }
 
 /** Sandbox returned after creation. */
@@ -306,14 +317,16 @@ export interface SandboxPluginConfig {
      * Return `null` or `undefined` to disable reuse for that call.
      */
     sessionKey?: (ctx: SandboxSessionKeyContext) => string | null | undefined;
-    /** Default sandbox creation options. */
-    defaults?: SandboxCreateParams;
+    /** Authoritative sandbox creation options that model overrides cannot overwrite. */
+    createConfig?: SandboxCreateParams;
+    /** Fallback sandbox creation options used only when createConfig and model overrides omit a field. */
+    createDefaults?: SandboxCreateParams;
     /** Approval settings for risky sandbox tools. */
     approvals?: SandboxToolApprovals;
 }
 
 /** Configuration for the built-in E2B sandbox client. */
-export interface E2BSandboxClientConfig extends SandboxCreateParams {
+export interface E2BSandboxClientConfig {
     /** API key used to authenticate with E2B. */
     apiKey?: string;
     /** Access token used instead of an API key. */
@@ -325,7 +338,7 @@ export interface E2BSandboxClientConfig extends SandboxCreateParams {
 }
 
 /** Configuration for the Daytona sandbox client. */
-export interface DaytonaSandboxClientConfig extends SandboxCreateParams {
+export interface DaytonaSandboxClientConfig {
     /** API key used to authenticate with Daytona. */
     apiKey?: string;
     /** Custom Daytona API base URL. */
@@ -334,18 +347,8 @@ export interface DaytonaSandboxClientConfig extends SandboxCreateParams {
     target?: string;
     /** Default language or runtime. */
     language?: string;
-    /** Explicit snapshot to create from. */
-    snapshot?: string;
-    /** Explicit image to create from. */
-    image?: string;
     /** Whether previews should be public. */
     public?: boolean;
-    /** Auto-stop interval in provider-defined units. */
-    autoStopInterval?: number;
-    /** Auto-archive interval in provider-defined units. */
-    autoArchiveInterval?: number;
-    /** Auto-delete interval in provider-defined units. */
-    autoDeleteInterval?: number;
-    /** For Daytona, whether `template` should be treated as a `snapshot` or `image`. */
+    /** For Daytona, how the shared sandbox template should be mapped. */
     templateKind?: "snapshot" | "image";
 }
