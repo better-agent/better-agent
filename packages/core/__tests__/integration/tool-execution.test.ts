@@ -60,6 +60,48 @@ const isHilClientToolEvent = (event: Event) =>
     event.type === Events.TOOL_APPROVAL_UPDATED ||
     event.type === Events.TOOL_CALL_END;
 
+const providerToolLifecycleEvents = (params: {
+    messageId: string;
+    toolCallId: string;
+    toolCallName: string;
+    args: string;
+    runId?: string;
+    agentName?: string;
+    toolTarget?: "server" | "client" | "hosted";
+}) => [
+    {
+        type: Events.TOOL_CALL_START,
+        parentMessageId: params.messageId,
+        toolCallId: params.toolCallId,
+        toolCallName: params.toolCallName,
+        runId: params.runId ?? "",
+        agentName: params.agentName ?? "",
+        toolTarget: params.toolTarget ?? "server",
+        timestamp: Date.now(),
+    },
+    {
+        type: Events.TOOL_CALL_ARGS,
+        parentMessageId: params.messageId,
+        toolCallId: params.toolCallId,
+        toolCallName: params.toolCallName,
+        delta: params.args,
+        runId: params.runId ?? "",
+        agentName: params.agentName ?? "",
+        toolTarget: params.toolTarget ?? "server",
+        timestamp: Date.now(),
+    },
+    {
+        type: Events.TOOL_CALL_END,
+        parentMessageId: params.messageId,
+        toolCallId: params.toolCallId,
+        toolCallName: params.toolCallName,
+        runId: params.runId ?? "",
+        agentName: params.agentName ?? "",
+        toolTarget: params.toolTarget ?? "server",
+        timestamp: Date.now(),
+    },
+] satisfies Event[];
+
 describe("tool execution", () => {
     test("run reuses provider-emitted assistant message id for tool parent linkage", async () => {
         const tool = defineTool({
@@ -101,6 +143,12 @@ describe("tool execution", () => {
                                     messageId,
                                     timestamp: Date.now(),
                                 },
+                                ...providerToolLifecycleEvents({
+                                    messageId,
+                                    toolCallId: "call_1",
+                                    toolCallName: "lookup",
+                                    args: "{}",
+                                }),
                             ],
                         });
                     }
@@ -166,6 +214,14 @@ describe("tool execution", () => {
                                     messageId,
                                     timestamp: Date.now(),
                                 });
+                                for (const event of providerToolLifecycleEvents({
+                                    messageId,
+                                    toolCallId: "call_1",
+                                    toolCallName: "lookup",
+                                    args: "{}",
+                                })) {
+                                    yield ok(event);
+                                }
                             })(),
                             final: Promise.resolve(
                                 createToolCallResponse([
@@ -289,10 +345,25 @@ describe("tool execution", () => {
         const agent = createTextAgent({
             model: {
                 ...createTextAgent().model,
-                async doGenerateStream() {
+                async doGenerateStream(_options: unknown, ctx: { generateMessageId(): string }) {
                     const response = responses.shift() ?? createTextResponse("done");
+                    const messageId = ctx.generateMessageId();
                     return ok({
-                        events: (async function* () {})(),
+                        events: (async function* () {
+                            if (
+                                response.output[0]?.type === "tool-call" &&
+                                "arguments" in response.output[0]
+                            ) {
+                                for (const event of providerToolLifecycleEvents({
+                                    messageId,
+                                    toolCallId: response.output[0].callId,
+                                    toolCallName: response.output[0].name,
+                                    args: response.output[0].arguments,
+                                })) {
+                                    yield ok(event);
+                                }
+                            }
+                        })(),
                         final: Promise.resolve(response),
                     });
                 },
@@ -356,9 +427,19 @@ describe("tool execution", () => {
         const agent = createTextAgent({
             model: {
                 ...createTextAgent().model,
-                async doGenerateStream() {
+                async doGenerateStream(_options: unknown, ctx: { generateMessageId(): string }) {
+                    const messageId = ctx.generateMessageId();
                     return ok({
-                        events: (async function* () {})(),
+                        events: (async function* () {
+                            for (const event of providerToolLifecycleEvents({
+                                messageId,
+                                toolCallId: "call_1",
+                                toolCallName: "confirm",
+                                args: '{"ok":true}',
+                            })) {
+                                yield ok(event);
+                            }
+                        })(),
                         final: Promise.resolve(
                             createToolCallResponse([
                                 { callId: "call_1", name: "confirm", arguments: '{"ok":true}' },
@@ -415,10 +496,25 @@ describe("tool execution", () => {
         const agent = createTextAgent({
             model: {
                 ...createTextAgent().model,
-                async doGenerateStream() {
+                async doGenerateStream(_options: unknown, ctx: { generateMessageId(): string }) {
                     const response = responses.shift() ?? createTextResponse("done");
+                    const messageId = ctx.generateMessageId();
                     return ok({
-                        events: (async function* () {})(),
+                        events: (async function* () {
+                            if (
+                                response.output[0]?.type === "tool-call" &&
+                                "arguments" in response.output[0]
+                            ) {
+                                for (const event of providerToolLifecycleEvents({
+                                    messageId,
+                                    toolCallId: response.output[0].callId,
+                                    toolCallName: response.output[0].name,
+                                    args: response.output[0].arguments,
+                                })) {
+                                    yield ok(event);
+                                }
+                            }
+                        })(),
                         final: Promise.resolve(response),
                     });
                 },
@@ -465,11 +561,11 @@ describe("tool execution", () => {
         expect(toolEvents.map((event) => event.type)).toEqual([
             Events.TOOL_CALL_START,
             Events.TOOL_CALL_ARGS,
+            Events.TOOL_CALL_END,
             Events.TOOL_APPROVAL_REQUIRED,
             Events.TOOL_APPROVAL_UPDATED,
-            Events.TOOL_CALL_END,
         ]);
-        expect(toolEvents[3]).toMatchObject({
+        expect(toolEvents[4]).toMatchObject({
             type: Events.TOOL_APPROVAL_UPDATED,
             state: "requested",
         });
