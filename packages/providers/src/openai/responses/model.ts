@@ -1,125 +1,132 @@
 import type { RunContext } from "@better-agent/core";
-import { Events } from "@better-agent/core/events";
 import type { Event } from "@better-agent/core/events";
 import type {
     GenerativeModelCallOptions,
+    GenerativeModelGenerateResult,
     GenerativeModelResponse,
     ModalitiesParam,
 } from "@better-agent/core/providers";
 import { BetterAgentError } from "@better-agent/shared/errors";
-import { type Result, err, ok } from "@better-agent/shared/neverthrow";
-import type { createOpenAIClient } from "../client";
+import type { Result } from "@better-agent/shared/neverthrow";
+import { err, ok } from "@better-agent/shared/neverthrow";
+
+import type { createAnthropicClient } from "../client/create-client";
 import {
-    OPENAI_AUDIO_SPEECH_CAPS,
-    collectNonStreamOutputEvents,
-    createDeferred,
-    openaiUpstreamError,
-} from "../shared/runtime";
-import type { OpenAISpeechStreamEvent } from "../shared/schemas";
-import type { OpenAICapsFor, OpenAIGenerativeModel, OpenAIOptionsFor } from "../types";
-import {
-    mapFromOpenAIAudioSpeechResponse,
-    mapFromOpenAIAudioSpeechStreamEvent,
-    mapToOpenAIAudioSpeechRequest,
+    createAnthropicStreamState,
+    mapFromAnthropicMessagesResponse,
+    mapFromAnthropicStreamEvent,
+    mapToAnthropicMessagesRequest,
 } from "./mappers";
-import type { OpenAIAudioSpeechModels } from "./schemas";
+import type { AnthropicResponseStreamEvent } from "./schemas";
+import type {
+    AnthropicResponseCaps,
+    AnthropicResponseEndpointOptions,
+    AnthropicResponseGenerativeModel,
+    AnthropicResponseModelId,
+} from "./types";
 
-export const createOpenAIAudioSpeechModel = <M extends OpenAIAudioSpeechModels>(
+export const ANTHROPIC_RESPONSE_CAPS = {
+    inputModalities: { text: true, image: true, file: true },
+    inputShape: "chat",
+    replayMode: "multi_turn",
+    supportsInstruction: true,
+    outputModalities: {
+        text: {
+            options: {},
+        },
+    },
+    tools: true,
+    structured_output: true,
+    additionalSupportedRoles: ["developer"],
+} as const satisfies AnthropicResponseCaps;
+
+const createDeferred = <T>() => {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+    return { promise, resolve, reject };
+};
+
+export const createAnthropicResponsesModel = <M extends AnthropicResponseModelId>(
     modelId: M,
-    client: ReturnType<typeof createOpenAIClient>,
-): OpenAIGenerativeModel<M> => {
-    const supportsSse = modelId === "gpt-4o-mini-tts";
-
-    const doGenerate: NonNullable<OpenAIGenerativeModel<M>["doGenerate"]> = async <
-        TModalities extends ModalitiesParam<OpenAICapsFor<M>> = undefined,
+    client: ReturnType<typeof createAnthropicClient>,
+): AnthropicResponseGenerativeModel<M> => {
+    const doGenerate: NonNullable<AnthropicResponseGenerativeModel<M>["doGenerate"]> = async <
+        const TModalities extends ModalitiesParam<AnthropicResponseCaps>,
     >(
-        options: GenerativeModelCallOptions<OpenAICapsFor<M>, OpenAIOptionsFor<M>, TModalities>,
+        options: GenerativeModelCallOptions<
+            AnthropicResponseCaps,
+            AnthropicResponseEndpointOptions,
+            TModalities
+        >,
         ctx: RunContext,
     ) => {
-        const requestBodyResult = mapToOpenAIAudioSpeechRequest({ modelId, options });
-        if (requestBodyResult.isErr()) {
-            return err(
-                requestBodyResult.error.at({
-                    at: "openai.generate.mapRequest",
-                    data: {
-                        modelId,
-                        endpoint: "audio.speech",
-                    },
-                }),
-            );
+        const mappedRequest = mapToAnthropicMessagesRequest({
+            modelId,
+            options,
+            stream: false,
+        });
+        if (mappedRequest.isErr()) {
+            return err(mappedRequest.error.at({ at: "anthropic.generate.mapRequest" }));
         }
 
-        const requestBody = requestBodyResult.value;
-
-        const raw = await client.audio.speech(requestBody, { signal: ctx.signal ?? null });
+        const raw = await client.messages.create(mappedRequest.value.request, {
+            signal: ctx.signal ?? null,
+            beta: mappedRequest.value.betas,
+        });
         if (raw.isErr()) {
-            return err(
-                raw.error
-                    .at({ at: "openai.generate.modelContext", data: { model: String(modelId) } })
-                    .at({
-                        at: "openai.generate.http",
-                        data: {
-                            modelId,
-                            endpoint: "audio.speech",
-                            path: "/v1/audio/speech",
-                        },
-                    }),
-            );
+            return err(raw.error.at({ at: "anthropic.generate.http" }));
         }
 
-        const response = mapFromOpenAIAudioSpeechResponse(raw.value, requestBody.response_format);
+        const response = mapFromAnthropicMessagesResponse({
+            response: raw.value,
+            usesJsonResponseTool: mappedRequest.value.usesJsonResponseTool,
+        });
+
         return ok({
             response: {
                 ...response,
                 request: {
-                    body: requestBody,
+                    body: mappedRequest.value.request,
                 },
             } satisfies GenerativeModelResponse,
-            events: collectNonStreamOutputEvents(response, ctx),
-        });
+        } satisfies GenerativeModelGenerateResult<AnthropicResponseCaps>);
     };
 
-    const doGenerateStream: NonNullable<OpenAIGenerativeModel<M>["doGenerateStream"]> = async <
-        const TModalities extends ModalitiesParam<OpenAICapsFor<M>>,
-    >(
-        options: GenerativeModelCallOptions<OpenAICapsFor<M>, OpenAIOptionsFor<M>, TModalities>,
+    const doGenerateStream: NonNullable<
+        AnthropicResponseGenerativeModel<M>["doGenerateStream"]
+    > = async <const TModalities extends ModalitiesParam<AnthropicResponseCaps>>(
+        options: GenerativeModelCallOptions<
+            AnthropicResponseCaps,
+            AnthropicResponseEndpointOptions,
+            TModalities
+        >,
         ctx: RunContext,
     ) => {
-        const requestBodyResult = mapToOpenAIAudioSpeechRequest({ modelId, options });
-        if (requestBodyResult.isErr()) {
-            return err(
-                requestBodyResult.error.at({
-                    at: "openai.generateStream.mapRequest",
-                    data: {
-                        modelId,
-                        endpoint: "audio.speech",
-                    },
-                }),
-            );
+        const mappedRequest = mapToAnthropicMessagesRequest({
+            modelId,
+            options,
+            stream: true,
+        });
+        if (mappedRequest.isErr()) {
+            return err(mappedRequest.error.at({ at: "anthropic.generateStream.mapRequest" }));
         }
 
-        const requestBody = {
-            ...requestBodyResult.value,
-            stream: true,
-            stream_format: supportsSse ? ("sse" as const) : ("audio" as const),
-        };
-
-        const streamResult = supportsSse
-            ? await client.audio.speechStream(requestBody, { signal: ctx.signal ?? null })
-            : await client.audio.speechStreamAudio(requestBody, { signal: ctx.signal ?? null });
+        const streamResult = await client.messages.stream(
+            {
+                ...mappedRequest.value.request,
+                stream: true,
+            },
+            {
+                signal: ctx.signal ?? null,
+                beta: mappedRequest.value.betas,
+            },
+        );
         if (streamResult.isErr()) {
-            return err(
-                streamResult.error
-                    .at({ at: "openai.generate.modelContext", data: { model: String(modelId) } })
-                    .at({
-                        at: "openai.generateStream.http",
-                        data: {
-                            modelId,
-                            endpoint: "audio.speech",
-                            path: "/v1/audio/speech",
-                        },
-                    }),
-            );
+            return err(streamResult.error.at({ at: "anthropic.generateStream.http" }));
         }
 
         const {
@@ -129,247 +136,74 @@ export const createOpenAIAudioSpeechModel = <M extends OpenAIAudioSpeechModels>(
         } = createDeferred<GenerativeModelResponse>();
 
         const events = (async function* (): AsyncGenerator<Result<Event, BetterAgentError>> {
-            const messageId = ctx.generateMessageId();
-
-            const toAudioMimeType = (format?: string) => {
-                switch (format) {
-                    case "mp3":
-                        return "audio/mpeg";
-                    case "wav":
-                        return "audio/wav";
-                    case "flac":
-                        return "audio/flac";
-                    case "aac":
-                        return "audio/aac";
-                    case "opus":
-                        return "audio/opus";
-                    case "pcm":
-                        return "audio/pcm";
-                    default:
-                        return "audio/mpeg";
-                }
-            };
-
-            const mimeType = toAudioMimeType(requestBody.response_format);
-            const chunks: Array<ReturnType<typeof Buffer.from>> = [];
-            let started = false;
+            const responseMessageId = ctx.generateMessageId();
+            const state = createAnthropicStreamState(
+                responseMessageId,
+                mappedRequest.value.usesJsonResponseTool,
+            );
             let sawFinal = false;
-            let finalResolved = false;
 
             try {
-                if (supportsSse) {
-                    const sseStream = streamResult.value as AsyncGenerator<
-                        Result<OpenAISpeechStreamEvent, BetterAgentError>
-                    >;
-                    for await (const raw of sseStream) {
-                        if (raw.isErr()) {
-                            const appErr = BetterAgentError.wrap({
-                                err: raw.error,
-                                message: "OpenAI stream chunk error",
-                                opts: {
-                                    code: "UPSTREAM_FAILED",
-                                },
-                            }).at({
-                                at: "openai.generateStream.chunk",
-                            });
+                for await (const raw of streamResult.value) {
+                    if (raw.isErr()) {
+                        rejectFinal(raw.error);
+                        yield err(raw.error);
+                        return;
+                    }
 
-                            yield err(appErr);
-                            rejectFinal(appErr);
-                            return;
-                        }
+                    const mapped = mapFromAnthropicStreamEvent(
+                        raw.value as AnthropicResponseStreamEvent,
+                        state,
+                    );
+                    if (mapped.isErr()) {
+                        const error = mapped.error.at({ at: "anthropic.generateStream.mapEvent" });
+                        rejectFinal(error);
+                        yield err(error);
+                        return;
+                    }
 
-                        if (raw.value.type === "speech.audio.delta") {
-                            chunks.push(Buffer.from(raw.value.audio, "base64"));
-                        }
+                    if (!mapped.value) continue;
 
-                        const audioBase64 =
-                            raw.value.type === "speech.audio.done"
-                                ? chunks.length
-                                    ? Buffer.concat(chunks).toString("base64")
-                                    : ""
-                                : undefined;
-
-                        const mapped = mapFromOpenAIAudioSpeechStreamEvent(raw.value, {
-                            messageId,
-                            mimeType,
-                            ...(audioBase64 !== undefined ? { audioBase64 } : {}),
-                        });
-                        if (mapped.isErr()) {
-                            const appErr = mapped.error.at({
-                                at: "openai.generateStream.mapEvent",
-                            });
-
-                            yield err(appErr);
-                            rejectFinal(appErr);
-                            return;
-                        }
-
-                        const m = mapped.value;
-                        if (!m) continue;
-
-                        if (!started) {
-                            started = true;
-                            yield ok({
-                                type: Events.AUDIO_MESSAGE_START,
-                                messageId,
-                                role: "assistant",
-                                timestamp: Date.now(),
-                            });
-                        }
-
-                        if (m.kind === "event") {
-                            yield ok(m.event);
-                            continue;
-                        }
-
+                    if (mapped.value.kind === "final") {
                         sawFinal = true;
                         resolveFinal({
-                            ...m.response,
+                            ...mapped.value.response,
                             request: {
-                                body: requestBody,
+                                body: mappedRequest.value.request,
                             },
                         });
-                        finalResolved = true;
-
-                        yield ok({
-                            type: Events.AUDIO_MESSAGE_END,
-                            messageId,
-                            timestamp: Date.now(),
-                        });
-
-                        return;
+                        continue;
                     }
 
-                    if (!sawFinal) {
-                        const missingFinal = openaiUpstreamError(
-                            "Stream ended without speech.audio.done",
+                    yield ok(mapped.value.event);
+                }
+            } finally {
+                if (!sawFinal) {
+                    rejectFinal(
+                        BetterAgentError.fromCode(
+                            "UPSTREAM_FAILED",
+                            "Anthropic stream ended without a final response event.",
                             {
-                                provider: "openai",
-                                code: "STREAM_MISSING_FINAL",
+                                context: {
+                                    provider: "anthropic",
+                                    model: String(modelId),
+                                },
                             },
                         ).at({
-                            at: "openai.generateStream.missingFinal",
-                        });
-
-                        yield err(missingFinal);
-                        rejectFinal(missingFinal);
-                        return;
-                    }
-                } else {
-                    const audioStream = streamResult.value as AsyncGenerator<
-                        Result<Uint8Array, BetterAgentError>
-                    >;
-                    for await (const raw of audioStream) {
-                        if (raw.isErr()) {
-                            const appErr = BetterAgentError.wrap({
-                                err: raw.error,
-                                message: "OpenAI stream chunk error",
-                                opts: {
-                                    code: "UPSTREAM_FAILED",
-                                },
-                            }).at({
-                                at: "openai.generateStream.chunk",
-                            });
-
-                            yield err(appErr);
-                            rejectFinal(appErr);
-                            return;
-                        }
-
-                        if (!started) {
-                            started = true;
-                            yield ok({
-                                type: Events.AUDIO_MESSAGE_START,
-                                messageId,
-                                role: "assistant",
-                                timestamp: Date.now(),
-                            });
-                        }
-
-                        const chunk = raw.value;
-                        const base64 = Buffer.from(chunk).toString("base64");
-                        chunks.push(Buffer.from(chunk));
-                        yield ok({
-                            type: Events.AUDIO_MESSAGE_CONTENT,
-                            messageId,
-                            delta: {
-                                kind: "base64",
-                                data: base64,
-                                mimeType,
-                            },
-                            timestamp: Date.now(),
-                        });
-                    }
-
-                    const audioBuffer = chunks.length ? Buffer.concat(chunks) : Buffer.alloc(0);
-                    const base64 = audioBuffer.toString("base64");
-                    resolveFinal({
-                        output: [
-                            {
-                                type: "message",
-                                role: "assistant",
-                                content: [
-                                    {
-                                        type: "audio",
-                                        source: {
-                                            kind: "base64",
-                                            data: base64,
-                                            mimeType,
-                                        },
-                                    },
-                                ],
-                            },
-                        ],
-                        finishReason: "stop",
-                        usage: {},
-                        request: {
-                            body: requestBody,
-                        },
-                        response: {
-                            body: {
-                                audio: base64,
-                            },
-                        },
-                    });
-                    finalResolved = true;
-                    sawFinal = true;
-
-                    yield ok({
-                        type: Events.AUDIO_MESSAGE_END,
-                        messageId,
-                        timestamp: Date.now(),
-                    });
+                            at: "anthropic.generateStream.final",
+                        }),
+                    );
                 }
-            } catch (e) {
-                const appErr = BetterAgentError.wrap({
-                    err: e,
-                    message: "OpenAI audio speech streaming failed",
-                    opts: {
-                        code: "UPSTREAM_FAILED",
-                        context: { provider: "openai", model: String(modelId) },
-                    },
-                }).at({
-                    at: "openai.generateStream.generator",
-                });
-
-                if (!finalResolved) {
-                    rejectFinal(appErr);
-                }
-                yield err(appErr);
-                return;
             }
         })();
 
-        return ok({
-            events,
-            final,
-        });
+        return ok({ events, final });
     };
 
     return {
-        providerId: "openai",
+        providerId: "anthropic",
         modelId,
-        caps: OPENAI_AUDIO_SPEECH_CAPS as OpenAICapsFor<M>,
+        caps: ANTHROPIC_RESPONSE_CAPS,
         doGenerate,
         doGenerateStream,
     };
