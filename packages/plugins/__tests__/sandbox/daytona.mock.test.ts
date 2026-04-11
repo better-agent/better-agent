@@ -322,7 +322,44 @@ describe("createDaytonaSandboxClient", () => {
                 language: "javascript",
                 envVars: { MODE: "image" },
                 labels: { owner: "plugins" },
-                image: "node:20",
+                image: "image-default",
+            },
+        ]);
+    });
+
+    test("prefers configured snapshot template over create overrides", async () => {
+        const createCalls: Array<Record<string, unknown> | undefined> = [];
+        const sandbox = createSandboxStub({ id: "daytona-snapshot" });
+
+        mock.module("@daytonaio/sdk", () => ({
+            Daytona: class {
+                async create(params?: Record<string, unknown>) {
+                    createCalls.push(params);
+                    return sandbox;
+                }
+
+                async get() {
+                    return sandbox;
+                }
+            },
+        }));
+
+        const client = createDaytonaSandboxClient({
+            template: "snapshot-default",
+            templateKind: "snapshot",
+            language: "typescript",
+        });
+
+        await client.createSandbox({
+            template: "snapshot-override",
+            envs: { MODE: "snapshot" },
+        });
+
+        expect(createCalls).toEqual([
+            {
+                language: "typescript",
+                envVars: { MODE: "snapshot" },
+                snapshot: "snapshot-default",
             },
         ]);
     });

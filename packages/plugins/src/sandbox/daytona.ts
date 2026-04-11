@@ -108,7 +108,7 @@ export function createDaytonaSandboxClient(config: DaytonaSandboxClientConfig = 
         envs?: Record<string, string>;
         metadata?: Record<string, string>;
     }) => {
-        const template = overrides?.template ?? config.template;
+            const template = config.template ?? overrides?.template;
         const templateKind = config.templateKind ?? "snapshot";
 
         return removeUndefined({

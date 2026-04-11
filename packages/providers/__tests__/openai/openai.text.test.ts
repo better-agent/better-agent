@@ -1047,6 +1047,89 @@ describe("openai-text stream mapping", () => {
         expect(toolEnds.length).toBe(1);
     });
 
+    test("enriches function call stream events with server tool metadata", async () => {
+        const fakeClient = {
+            responses: {
+                stream: async () =>
+                    ok(
+                        (async function* () {
+                            yield ok({
+                                type: "response.output_item.added",
+                                item: {
+                                    type: "function_call",
+                                    id: OPENAI_TEXT_FIXTURE.ids.functionCall,
+                                    call_id: "call_stream_server_1",
+                                    name: "get_weather",
+                                },
+                            } as OpenAIResponseStreamEvent);
+                            yield ok({
+                                type: "response.function_call_arguments.delta",
+                                item_id: OPENAI_TEXT_FIXTURE.ids.functionCall,
+                                call_id: "call_stream_server_1",
+                                delta: '{"location":"SF"}',
+                            } as OpenAIResponseStreamEvent);
+                            yield ok({
+                                type: "response.function_call_arguments.done",
+                                item_id: OPENAI_TEXT_FIXTURE.ids.functionCall,
+                                call_id: "call_stream_server_1",
+                            } as OpenAIResponseStreamEvent);
+                            yield ok({
+                                type: "response.completed",
+                                response: {
+                                    output: [],
+                                    usage: {
+                                        input_tokens: 1,
+                                        output_tokens: 1,
+                                    },
+                                },
+                            } as OpenAIResponseStreamEvent);
+                        })(),
+                    ),
+            },
+        } as unknown as ReturnType<typeof createOpenAIClient>;
+
+        const model = createOpenAIGenerativeModel("gpt-5.1", fakeClient, "responses");
+        if (!model.doGenerateStream) {
+            throw new Error("Expected responses model to implement doGenerateStream");
+        }
+
+        const events: Event[] = [];
+        const runContext: RunContext = {
+            runId: "run_function_stream_1",
+            agentName: "test-agent",
+            providerId: "openai",
+            modelId: "gpt-5.1",
+            generateMessageId: () => OPENAI_TEXT_FIXTURE.ids.message1,
+            signal: new AbortController().signal,
+        };
+
+        const streamResult = await model.doGenerateStream(
+            { input: "hello", tools: [WEATHER_TOOL] },
+            runContext,
+        );
+        if (streamResult.isErr()) throw streamResult.error;
+        for await (const event of streamResult.value.events) {
+            if (event.isErr()) throw event.error;
+            events.push(event.value);
+        }
+        await streamResult.value.final;
+
+        const toolEvents = events.filter(
+            (event) =>
+                event.type === Events.TOOL_CALL_START ||
+                event.type === Events.TOOL_CALL_ARGS ||
+                event.type === Events.TOOL_CALL_END,
+        );
+
+        expect(toolEvents).toHaveLength(3);
+        for (const event of toolEvents) {
+            expect(event.runId).toBe("run_function_stream_1");
+            expect(event.agentName).toBe("test-agent");
+            expect(event.toolTarget).toBe("server");
+            expect(event.toolCallName).toBe("get_weather");
+        }
+    });
+
     test("synthesizes reasoning start when delta arrives before start", async () => {
         const fakeClient = {
             responses: {

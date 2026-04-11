@@ -103,9 +103,22 @@ export const createOpenAIResponsesModel = <M extends OpenAIResponseModels>(
             reject: rejectFinal,
         } = createDeferred<GenerativeModelResponse>();
 
+        const callableToolTargetByName = new Map<string, "server" | "client">();
+        const tools = ("tools" in options ? options.tools : undefined) ?? [];
+        for (const tool of tools) {
+            if (!tool || typeof tool !== "object") continue;
+            if (tool.kind !== "server" && tool.kind !== "client") continue;
+            if (typeof tool.name !== "string" || tool.name.length === 0) continue;
+            callableToolTargetByName.set(tool.name, tool.kind);
+        }
+
         const events = (async function* (): AsyncGenerator<Result<Event, BetterAgentError>> {
             const messageId = ctx.generateMessageId();
             const functionCallIdByItemId = new Map<string, string>();
+            const functionCallMetaByCallId = new Map<
+                string,
+                { toolCallName: string; toolTarget: "server" | "client" }
+            >();
             let sawFinal = false;
             let sawTextEnd = false;
             let finalResolved = false;
@@ -139,6 +152,13 @@ export const createOpenAIResponsesModel = <M extends OpenAIResponseModels>(
                         openAiEvent.item.call_id.length > 0
                     ) {
                         functionCallIdByItemId.set(openAiEvent.item.id, openAiEvent.item.call_id);
+                        const toolTarget = callableToolTargetByName.get(openAiEvent.item.name ?? "");
+                        if (toolTarget && typeof openAiEvent.item.name === "string") {
+                            functionCallMetaByCallId.set(openAiEvent.item.call_id, {
+                                toolCallName: openAiEvent.item.name,
+                                toolTarget,
+                            });
+                        }
                     } else if (
                         (openAiEvent.type === "response.function_call_arguments.delta" ||
                             openAiEvent.type === "response.function_call_arguments.done") &&
@@ -217,7 +237,25 @@ export const createOpenAIResponsesModel = <M extends OpenAIResponseModels>(
                         continue;
                     }
 
-                    const ev = m.event;
+                    const functionCallMeta =
+                        m.kind === "event" &&
+                        (m.event.type === Events.TOOL_CALL_START ||
+                            m.event.type === Events.TOOL_CALL_ARGS ||
+                            m.event.type === Events.TOOL_CALL_END ||
+                            m.event.type === Events.TOOL_CALL_RESULT)
+                            ? functionCallMetaByCallId.get(m.event.toolCallId)
+                            : undefined;
+
+                    const ev =
+                        m.kind === "event" && functionCallMeta
+                            ? {
+                                  ...m.event,
+                                  toolCallName: functionCallMeta.toolCallName,
+                                  toolTarget: functionCallMeta.toolTarget,
+                                  runId: ctx.runId,
+                                  agentName: ctx.agentName,
+                              }
+                            : m.event;
                     const reasoningKey =
                         ev.type === Events.REASONING_MESSAGE_START ||
                         ev.type === Events.REASONING_MESSAGE_CONTENT ||
