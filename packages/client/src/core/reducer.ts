@@ -164,37 +164,26 @@ export const applyEvent = (
                 state,
                 event.parentMessageId,
                 event.toolCallId,
-                (msg) => {
-                    if (isToolCallCompleted(msg, event.toolCallId)) {
-                        return msg;
-                    }
-
-                    const existing = findToolCallPart(msg, event.toolCallId);
-                    if (
-                        existing?.args === event.delta &&
-                        (existing.state === "input-complete" || existing.state === "completed")
-                    ) {
-                        return msg;
-                    }
-
-                    return upsertToolPart(
-                        msg,
-                        "tool-call",
-                        event.toolCallId,
-                        {
-                            name: event.toolCallName,
-                            ...(event.toolTarget !== undefined
-                                ? { toolTarget: event.toolTarget }
-                                : {}),
-                            status: "pending",
-                            state: "input-streaming",
-                        },
-                        (part) =>
-                            part.type === "tool-call"
-                                ? { ...part, args: (part.args ?? "") + event.delta }
-                                : part,
-                    );
-                },
+                (msg) =>
+                    isToolCallCompleted(msg, event.toolCallId)
+                        ? msg
+                        : upsertToolPart(
+                              msg,
+                              "tool-call",
+                              event.toolCallId,
+                              {
+                                  name: event.toolCallName,
+                                  ...(event.toolTarget !== undefined
+                                      ? { toolTarget: event.toolTarget }
+                                      : {}),
+                                  status: "pending",
+                                  state: "input-streaming",
+                              },
+                              (part) =>
+                                  part.type === "tool-call"
+                                      ? { ...part, args: (part.args ?? "") + event.delta }
+                                      : part,
+                          ),
             );
         }
         case "TOOL_CALL_END": {
