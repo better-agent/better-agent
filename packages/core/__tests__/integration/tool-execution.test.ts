@@ -77,7 +77,7 @@ const providerToolLifecycleEvents = (params: {
             toolCallName: params.toolCallName,
             runId: params.runId ?? "",
             agentName: params.agentName ?? "",
-            toolTarget: params.toolTarget ?? "server",
+            toolTarget: params.toolTarget ?? "hosted",
             timestamp: Date.now(),
         },
         {
@@ -88,7 +88,7 @@ const providerToolLifecycleEvents = (params: {
             delta: params.args,
             runId: params.runId ?? "",
             agentName: params.agentName ?? "",
-            toolTarget: params.toolTarget ?? "server",
+            toolTarget: params.toolTarget ?? "hosted",
             timestamp: Date.now(),
         },
         {
@@ -98,7 +98,7 @@ const providerToolLifecycleEvents = (params: {
             toolCallName: params.toolCallName,
             runId: params.runId ?? "",
             agentName: params.agentName ?? "",
-            toolTarget: params.toolTarget ?? "server",
+            toolTarget: params.toolTarget ?? "hosted",
             timestamp: Date.now(),
         },
     ] satisfies Event[];
@@ -176,6 +176,9 @@ describe("tool execution", () => {
         expect(
             assistantStart && "messageId" in assistantStart ? assistantStart.messageId : undefined,
         ).toBe(toolStart && "parentMessageId" in toolStart ? toolStart.parentMessageId : undefined);
+        expect(toolStart && "toolTarget" in toolStart ? toolStart.toolTarget : undefined).toBe(
+            "server",
+        );
     });
 
     test("stream reuses provider-emitted assistant message id for tool parent linkage", async () => {
@@ -259,6 +262,9 @@ describe("tool execution", () => {
         expect(
             assistantStart && "messageId" in assistantStart ? assistantStart.messageId : undefined,
         ).toBe(toolStart && "parentMessageId" in toolStart ? toolStart.parentMessageId : undefined);
+        expect(toolStart && "toolTarget" in toolStart ? toolStart.toolTarget : undefined).toBe(
+            "server",
+        );
     });
 
     test("server tool executes and result is fed back into the next model step", async () => {
@@ -407,6 +413,9 @@ describe("tool execution", () => {
             Events.TOOL_CALL_ARGS,
             Events.TOOL_CALL_END,
         ]);
+        expect(
+            toolEvents.every((event) => "toolTarget" in event && event.toolTarget === "client"),
+        ).toBeTrue();
 
         const runStarted = seenEvents.find((event) => event.type === Events.RUN_STARTED);
         const runId = runStarted && "runId" in runStarted ? runStarted.runId : "";
@@ -566,6 +575,16 @@ describe("tool execution", () => {
             Events.TOOL_APPROVAL_REQUIRED,
             Events.TOOL_APPROVAL_UPDATED,
         ]);
+        expect(
+            toolEvents
+                .filter(
+                    (event) =>
+                        event.type === Events.TOOL_CALL_START ||
+                        event.type === Events.TOOL_CALL_ARGS ||
+                        event.type === Events.TOOL_CALL_END,
+                )
+                .every((event) => "toolTarget" in event && event.toolTarget === "client"),
+        ).toBeTrue();
         expect(toolEvents[4]).toMatchObject({
             type: Events.TOOL_APPROVAL_UPDATED,
             state: "requested",
