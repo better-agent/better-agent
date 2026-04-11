@@ -1,132 +1,100 @@
 import type { RunContext } from "@better-agent/core";
+import { Events } from "@better-agent/core/events";
 import type { Event } from "@better-agent/core/events";
 import type {
     GenerativeModelCallOptions,
-    GenerativeModelGenerateResult,
     GenerativeModelResponse,
     ModalitiesParam,
 } from "@better-agent/core/providers";
 import { BetterAgentError } from "@better-agent/shared/errors";
-import type { Result } from "@better-agent/shared/neverthrow";
-import { err, ok } from "@better-agent/shared/neverthrow";
-
-import type { createAnthropicClient } from "../client/create-client";
+import { type Result, err, ok } from "@better-agent/shared/neverthrow";
+import type { createOpenAIClient } from "../client";
 import {
-    createAnthropicStreamState,
-    mapFromAnthropicMessagesResponse,
-    mapFromAnthropicStreamEvent,
-    mapToAnthropicMessagesRequest,
+    OPENAI_RESPONSE_CAPS,
+    collectNonStreamOutputEvents,
+    createDeferred,
+    openaiUpstreamError,
+} from "../shared/runtime";
+import type { OpenAICapsFor, OpenAIGenerativeModel, OpenAIOptionsFor } from "../types";
+import {
+    mapFromOpenAIResponsesResponse,
+    mapFromOpenAIResponsesStreamEvent,
+    mapToOpenAIResponsesRequest,
 } from "./mappers";
-import type { AnthropicResponseStreamEvent } from "./schemas";
-import type {
-    AnthropicResponseCaps,
-    AnthropicResponseEndpointOptions,
-    AnthropicResponseGenerativeModel,
-    AnthropicResponseModelId,
-} from "./types";
+import type { OpenAIResponseModels, OpenAIResponseStreamEvent } from "./schemas";
 
-export const ANTHROPIC_RESPONSE_CAPS = {
-    inputModalities: { text: true, image: true, file: true },
-    inputShape: "chat",
-    replayMode: "multi_turn",
-    supportsInstruction: true,
-    outputModalities: {
-        text: {
-            options: {},
-        },
-    },
-    tools: true,
-    structured_output: true,
-    additionalSupportedRoles: ["developer"],
-} as const satisfies AnthropicResponseCaps;
-
-const createDeferred = <T>() => {
-    let resolve!: (value: T | PromiseLike<T>) => void;
-    let reject!: (reason?: unknown) => void;
-    const promise = new Promise<T>((res, rej) => {
-        resolve = res;
-        reject = rej;
-    });
-    return { promise, resolve, reject };
-};
-
-export const createAnthropicResponsesModel = <M extends AnthropicResponseModelId>(
+export const createOpenAIResponsesModel = <M extends OpenAIResponseModels>(
     modelId: M,
-    client: ReturnType<typeof createAnthropicClient>,
-): AnthropicResponseGenerativeModel<M> => {
-    const doGenerate: NonNullable<AnthropicResponseGenerativeModel<M>["doGenerate"]> = async <
-        const TModalities extends ModalitiesParam<AnthropicResponseCaps>,
+    client: ReturnType<typeof createOpenAIClient>,
+): OpenAIGenerativeModel<M> => {
+    const doGenerate: NonNullable<OpenAIGenerativeModel<M>["doGenerate"]> = async <
+        const TModalities extends ModalitiesParam<OpenAICapsFor<M>>,
     >(
-        options: GenerativeModelCallOptions<
-            AnthropicResponseCaps,
-            AnthropicResponseEndpointOptions,
-            TModalities
-        >,
+        options: GenerativeModelCallOptions<OpenAICapsFor<M>, OpenAIOptionsFor<M>, TModalities>,
         ctx: RunContext,
     ) => {
-        const mappedRequest = mapToAnthropicMessagesRequest({
-            modelId,
-            options,
-            stream: false,
-        });
-        if (mappedRequest.isErr()) {
-            return err(mappedRequest.error.at({ at: "anthropic.generate.mapRequest" }));
+        const requestBodyResult = mapToOpenAIResponsesRequest({ modelId, options });
+        if (requestBodyResult.isErr()) {
+            return err(
+                requestBodyResult.error.at({
+                    at: "openai.generate.mapRequest",
+                    data: { modelId, endpoint: "responses" },
+                }),
+            );
         }
 
-        const raw = await client.messages.create(mappedRequest.value.request, {
-            signal: ctx.signal ?? null,
-            beta: mappedRequest.value.betas,
-        });
+        const requestBody = requestBodyResult.value;
+        const raw = await client.responses.create(requestBody, { signal: ctx.signal ?? null });
         if (raw.isErr()) {
-            return err(raw.error.at({ at: "anthropic.generate.http" }));
+            return err(
+                raw.error
+                    .at({ at: "openai.generate.modelContext", data: { model: String(modelId) } })
+                    .at({
+                        at: "openai.generate.http",
+                        data: { modelId, endpoint: "responses", path: "/v1/responses" },
+                    }),
+            );
         }
 
-        const response = mapFromAnthropicMessagesResponse({
-            response: raw.value,
-            usesJsonResponseTool: mappedRequest.value.usesJsonResponseTool,
-        });
-
+        const response = mapFromOpenAIResponsesResponse(raw.value);
         return ok({
             response: {
                 ...response,
-                request: {
-                    body: mappedRequest.value.request,
-                },
+                request: { body: requestBody },
             } satisfies GenerativeModelResponse,
-        } satisfies GenerativeModelGenerateResult<AnthropicResponseCaps>);
+            events: collectNonStreamOutputEvents(response, ctx),
+        });
     };
 
-    const doGenerateStream: NonNullable<
-        AnthropicResponseGenerativeModel<M>["doGenerateStream"]
-    > = async <const TModalities extends ModalitiesParam<AnthropicResponseCaps>>(
-        options: GenerativeModelCallOptions<
-            AnthropicResponseCaps,
-            AnthropicResponseEndpointOptions,
-            TModalities
-        >,
+    const doGenerateStream: NonNullable<OpenAIGenerativeModel<M>["doGenerateStream"]> = async <
+        const TModalities extends ModalitiesParam<OpenAICapsFor<M>>,
+    >(
+        options: GenerativeModelCallOptions<OpenAICapsFor<M>, OpenAIOptionsFor<M>, TModalities>,
         ctx: RunContext,
     ) => {
-        const mappedRequest = mapToAnthropicMessagesRequest({
-            modelId,
-            options,
-            stream: true,
-        });
-        if (mappedRequest.isErr()) {
-            return err(mappedRequest.error.at({ at: "anthropic.generateStream.mapRequest" }));
+        const requestBodyResult = mapToOpenAIResponsesRequest({ modelId, options });
+        if (requestBodyResult.isErr()) {
+            return err(
+                requestBodyResult.error.at({
+                    at: "openai.generateStream.mapRequest",
+                    data: { modelId, endpoint: "responses" },
+                }),
+            );
         }
 
-        const streamResult = await client.messages.stream(
-            {
-                ...mappedRequest.value.request,
-                stream: true,
-            },
-            {
-                signal: ctx.signal ?? null,
-                beta: mappedRequest.value.betas,
-            },
-        );
+        const requestBody = requestBodyResult.value;
+        const streamResult = await client.responses.stream(requestBody, {
+            signal: ctx.signal ?? null,
+        });
         if (streamResult.isErr()) {
-            return err(streamResult.error.at({ at: "anthropic.generateStream.http" }));
+            return err(
+                streamResult.error
+                    .at({ at: "openai.generate.modelContext", data: { model: String(modelId) } })
+                    .at({
+                        at: "openai.generateStream.http",
+                        data: { modelId, endpoint: "responses", path: "/v1/responses" },
+                    }),
+            );
         }
 
         const {
@@ -136,64 +104,229 @@ export const createAnthropicResponsesModel = <M extends AnthropicResponseModelId
         } = createDeferred<GenerativeModelResponse>();
 
         const events = (async function* (): AsyncGenerator<Result<Event, BetterAgentError>> {
-            const responseMessageId = ctx.generateMessageId();
-            const state = createAnthropicStreamState(
-                responseMessageId,
-                mappedRequest.value.usesJsonResponseTool,
-            );
+            const messageId = ctx.generateMessageId();
+            const functionCallIdByItemId = new Map<string, string>();
             let sawFinal = false;
+            let sawTextEnd = false;
+            let finalResolved = false;
+            const endedToolCalls = new Set<string>();
+            const resultToolCalls = new Set<string>();
+            const startedImageMessages = new Set<string>();
+            const endedImageMessages = new Set<string>();
+            const startedReasoningMessages = new Set<string>();
+            const endedReasoningMessages = new Set<string>();
 
             try {
                 for await (const raw of streamResult.value) {
                     if (raw.isErr()) {
-                        rejectFinal(raw.error);
-                        yield err(raw.error);
+                        const appErr = BetterAgentError.wrap({
+                            err: raw.error,
+                            message: "OpenAI stream chunk error",
+                            opts: { code: "UPSTREAM_FAILED" },
+                        }).at({ at: "openai.generateStream.chunk" });
+                        yield err(appErr);
+                        rejectFinal(appErr);
                         return;
                     }
 
-                    const mapped = mapFromAnthropicStreamEvent(
-                        raw.value as AnthropicResponseStreamEvent,
-                        state,
-                    );
+                    let openAiEvent = raw.value as OpenAIResponseStreamEvent;
+                    if (
+                        openAiEvent.type === "response.output_item.added" &&
+                        openAiEvent.item?.type === "function_call" &&
+                        typeof openAiEvent.item.id === "string" &&
+                        openAiEvent.item.id.length > 0 &&
+                        typeof openAiEvent.item.call_id === "string" &&
+                        openAiEvent.item.call_id.length > 0
+                    ) {
+                        functionCallIdByItemId.set(openAiEvent.item.id, openAiEvent.item.call_id);
+                    } else if (
+                        (openAiEvent.type === "response.function_call_arguments.delta" ||
+                            openAiEvent.type === "response.function_call_arguments.done") &&
+                        typeof openAiEvent.item_id === "string" &&
+                        openAiEvent.item_id.length > 0 &&
+                        (typeof openAiEvent.call_id !== "string" ||
+                            openAiEvent.call_id.length === 0)
+                    ) {
+                        const mappedCallId = functionCallIdByItemId.get(openAiEvent.item_id);
+                        if (mappedCallId) openAiEvent = { ...openAiEvent, call_id: mappedCallId };
+                    }
+
+                    const mapped = mapFromOpenAIResponsesStreamEvent(openAiEvent, messageId);
                     if (mapped.isErr()) {
-                        const error = mapped.error.at({ at: "anthropic.generateStream.mapEvent" });
-                        rejectFinal(error);
-                        yield err(error);
+                        const appErr = mapped.error.at({ at: "openai.generateStream.mapEvent" });
+                        yield err(appErr);
+                        rejectFinal(appErr);
                         return;
                     }
 
-                    if (!mapped.value) continue;
+                    const m = mapped.value;
+                    if (!m) continue;
 
-                    if (mapped.value.kind === "final") {
+                    if (m.kind === "final") {
                         sawFinal = true;
-                        resolveFinal({
-                            ...mapped.value.response,
-                            request: {
-                                body: mappedRequest.value.request,
-                            },
-                        });
+                        for (const outputItem of m.response.output) {
+                            if (
+                                outputItem.type !== "provider-tool-result" ||
+                                resultToolCalls.has(outputItem.callId)
+                            ) {
+                                continue;
+                            }
+
+                            yield ok({
+                                type: Events.TOOL_CALL_RESULT,
+                                parentMessageId: messageId,
+                                toolCallId: outputItem.callId,
+                                toolCallName: outputItem.name,
+                                result: outputItem.result,
+                                runId: ctx.runId,
+                                agentName: ctx.agentName,
+                                toolTarget: "hosted",
+                                timestamp: Date.now(),
+                            });
+                            resultToolCalls.add(outputItem.callId);
+
+                            if (
+                                startedImageMessages.has(outputItem.callId) &&
+                                !endedImageMessages.has(outputItem.callId)
+                            ) {
+                                yield ok({
+                                    type: Events.IMAGE_MESSAGE_END,
+                                    messageId: outputItem.callId,
+                                    timestamp: Date.now(),
+                                });
+                                endedImageMessages.add(outputItem.callId);
+                            }
+
+                            if (endedToolCalls.has(outputItem.callId)) continue;
+                            yield ok({
+                                type: Events.TOOL_CALL_END,
+                                parentMessageId: messageId,
+                                toolCallId: outputItem.callId,
+                                toolCallName: outputItem.name,
+                                runId: ctx.runId,
+                                agentName: ctx.agentName,
+                                toolTarget: "hosted",
+                                timestamp: Date.now(),
+                            });
+                            endedToolCalls.add(outputItem.callId);
+                        }
+
+                        resolveFinal({ ...m.response, request: { body: requestBody } });
+                        finalResolved = true;
+                        if (sawTextEnd) return;
                         continue;
                     }
 
-                    yield ok(mapped.value.event);
+                    const ev = m.event;
+                    const reasoningKey =
+                        ev.type === Events.REASONING_MESSAGE_START ||
+                        ev.type === Events.REASONING_MESSAGE_CONTENT ||
+                        ev.type === Events.REASONING_MESSAGE_END
+                            ? `${ev.visibility}:${ev.messageId}`
+                            : null;
+
+                    if (ev.type === Events.TEXT_MESSAGE_END) sawTextEnd = true;
+
+                    if (
+                        ev.type === Events.IMAGE_MESSAGE_CONTENT &&
+                        !startedImageMessages.has(ev.messageId)
+                    ) {
+                        yield ok({
+                            type: Events.IMAGE_MESSAGE_START,
+                            messageId: ev.messageId,
+                            role: "assistant",
+                            timestamp: Date.now(),
+                        });
+                        startedImageMessages.add(ev.messageId);
+                    }
+
+                    if (ev.type === Events.TOOL_CALL_END) endedToolCalls.add(ev.toolCallId);
+                    if (ev.type === Events.TOOL_CALL_RESULT) resultToolCalls.add(ev.toolCallId);
+                    if (ev.type === Events.REASONING_MESSAGE_START && reasoningKey) {
+                        startedReasoningMessages.add(reasoningKey);
+                    }
+
+                    if (
+                        (ev.type === Events.REASONING_MESSAGE_CONTENT ||
+                            ev.type === Events.REASONING_MESSAGE_END) &&
+                        reasoningKey &&
+                        !startedReasoningMessages.has(reasoningKey)
+                    ) {
+                        yield ok({
+                            type: Events.REASONING_MESSAGE_START,
+                            messageId: ev.messageId,
+                            role: "assistant",
+                            visibility: ev.visibility,
+                            timestamp: Date.now(),
+                        });
+                        startedReasoningMessages.add(reasoningKey);
+                    }
+
+                    if (
+                        ev.type === Events.REASONING_MESSAGE_END &&
+                        reasoningKey &&
+                        endedReasoningMessages.has(reasoningKey)
+                    ) {
+                        continue;
+                    }
+
+                    yield ok(ev);
+
+                    if (
+                        ev.type === Events.TOOL_CALL_RESULT &&
+                        startedImageMessages.has(ev.toolCallId) &&
+                        !endedImageMessages.has(ev.toolCallId)
+                    ) {
+                        yield ok({
+                            type: Events.IMAGE_MESSAGE_END,
+                            messageId: ev.toolCallId,
+                            timestamp: Date.now(),
+                        });
+                        endedImageMessages.add(ev.toolCallId);
+                    }
+
+                    if (ev.type === Events.TOOL_CALL_RESULT && !endedToolCalls.has(ev.toolCallId)) {
+                        yield ok({
+                            type: Events.TOOL_CALL_END,
+                            parentMessageId: messageId,
+                            toolCallId: ev.toolCallId,
+                            toolCallName: ev.toolCallName,
+                            runId: ctx.runId,
+                            agentName: ctx.agentName,
+                            toolTarget: "hosted",
+                            timestamp: Date.now(),
+                        });
+                        endedToolCalls.add(ev.toolCallId);
+                    }
+
+                    if (ev.type === Events.REASONING_MESSAGE_END && reasoningKey) {
+                        endedReasoningMessages.add(reasoningKey);
+                    }
+
+                    if (finalResolved && sawTextEnd) return;
                 }
-            } finally {
+
                 if (!sawFinal) {
-                    rejectFinal(
-                        BetterAgentError.fromCode(
-                            "UPSTREAM_FAILED",
-                            "Anthropic stream ended without a final response event.",
-                            {
-                                context: {
-                                    provider: "anthropic",
-                                    model: String(modelId),
-                                },
-                            },
-                        ).at({
-                            at: "anthropic.generateStream.final",
-                        }),
-                    );
+                    const missingFinal = openaiUpstreamError(
+                        "Stream ended without response.completed",
+                        { provider: "openai", code: "STREAM_MISSING_FINAL" },
+                    ).at({ at: "openai.generateStream.missingFinal" });
+                    yield err(missingFinal);
+                    rejectFinal(missingFinal);
+                    return;
                 }
+            } catch (e) {
+                const appErr = BetterAgentError.wrap({
+                    err: e,
+                    message: "OpenAI streaming failed",
+                    opts: {
+                        code: "UPSTREAM_FAILED",
+                        context: { provider: "openai", model: String(modelId) },
+                    },
+                }).at({ at: "openai.generateStream.generator" });
+                yield err(appErr);
+                rejectFinal(appErr);
+                return;
             }
         })();
 
@@ -201,9 +334,9 @@ export const createAnthropicResponsesModel = <M extends AnthropicResponseModelId
     };
 
     return {
-        providerId: "anthropic",
+        providerId: "openai",
         modelId,
-        caps: ANTHROPIC_RESPONSE_CAPS,
+        caps: OPENAI_RESPONSE_CAPS as OpenAICapsFor<M>,
         doGenerate,
         doGenerateStream,
     };
