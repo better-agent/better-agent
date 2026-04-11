@@ -146,17 +146,32 @@ export const applyEvent = (
                 state,
                 event.parentMessageId,
                 event.toolCallId,
-                (msg) =>
-                    isToolCallCompleted(msg, event.toolCallId)
-                        ? msg
-                        : upsertToolPart(msg, "tool-call", event.toolCallId, {
-                              name: event.toolCallName,
-                              ...(event.toolTarget !== undefined
-                                  ? { toolTarget: event.toolTarget }
-                                  : {}),
-                              status: "pending",
-                              state: "awaiting-input",
-                          }),
+                (msg) => {
+                    if (isToolCallCompleted(msg, event.toolCallId)) {
+                        return msg;
+                    }
+
+                    const existing = findToolCallPart(msg, event.toolCallId);
+                    const resetArgs =
+                        typeof existing?.toolTarget === "string" &&
+                        typeof event.toolTarget === "string" &&
+                        existing.toolTarget !== event.toolTarget;
+
+                    return upsertToolPart(
+                        msg,
+                        "tool-call",
+                        event.toolCallId,
+                        {
+                            name: event.toolCallName,
+                            ...(event.toolTarget !== undefined
+                                ? { toolTarget: event.toolTarget }
+                                : {}),
+                            status: "pending",
+                            state: "awaiting-input",
+                            ...(resetArgs ? { args: "" } : {}),
+                        },
+                    );
+                },
             );
         }
         case "TOOL_CALL_ARGS": {
@@ -164,26 +179,38 @@ export const applyEvent = (
                 state,
                 event.parentMessageId,
                 event.toolCallId,
-                (msg) =>
-                    isToolCallCompleted(msg, event.toolCallId)
-                        ? msg
-                        : upsertToolPart(
-                              msg,
-                              "tool-call",
-                              event.toolCallId,
-                              {
-                                  name: event.toolCallName,
-                                  ...(event.toolTarget !== undefined
-                                      ? { toolTarget: event.toolTarget }
-                                      : {}),
-                                  status: "pending",
-                                  state: "input-streaming",
-                              },
-                              (part) =>
-                                  part.type === "tool-call"
-                                      ? { ...part, args: (part.args ?? "") + event.delta }
-                                      : part,
-                          ),
+                (msg) => {
+                    if (isToolCallCompleted(msg, event.toolCallId)) {
+                        return msg;
+                    }
+
+                    const existing = findToolCallPart(msg, event.toolCallId);
+                    const resetArgs =
+                        typeof existing?.toolTarget === "string" &&
+                        typeof event.toolTarget === "string" &&
+                        existing.toolTarget !== event.toolTarget;
+
+                    return upsertToolPart(
+                        msg,
+                        "tool-call",
+                        event.toolCallId,
+                        {
+                            name: event.toolCallName,
+                            ...(event.toolTarget !== undefined
+                                ? { toolTarget: event.toolTarget }
+                                : {}),
+                            status: "pending",
+                            state: "input-streaming",
+                        },
+                        (part) =>
+                            part.type === "tool-call"
+                                ? {
+                                      ...part,
+                                      args: resetArgs ? event.delta : (part.args ?? "") + event.delta,
+                                  }
+                                : part,
+                    );
+                },
             );
         }
         case "TOOL_CALL_END": {
