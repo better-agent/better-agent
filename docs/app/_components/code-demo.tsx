@@ -56,7 +56,7 @@ const leftTokens: (Tok | null)[] = [
     null,
     { t: "  instruction", c: PR },
     { t: ": ", c: X },
-    { t: '"You are a helpful"', c: S },
+    { t: '"You are helpful"', c: S },
     { t: ",", c: X },
     null,
     { t: "});", c: X },

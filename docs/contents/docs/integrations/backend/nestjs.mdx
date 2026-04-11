@@ -1,0 +1,95 @@
+---
+title: NestJS
+description: Integrate Better Agent with NestJS.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Integrate Better Agent with NestJS by creating your app and mounting its HTTP handler.
+
+<Callout type="info">
+  This example uses NestJS with Express by default. If your app uses Fastify, mount Better Agent with the Fastify adapter instead. You can also skip these handlers entirely and wire Better Agent into NestJS manually if you need a custom integration.
+</Callout>
+
+## Create the app
+
+Start with a normal Better Agent service.
+
+```ts title="server.service.ts"
+import { Injectable } from "@nestjs/common";
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { createOpenAI } from "@better-agent/providers/openai";
+
+@Injectable()
+export class ServerService {
+  private readonly agentAppPromise = this.createAgentApp();
+
+  async getAgentApp() {
+    return this.agentAppPromise;
+  }
+
+  private async createAgentApp() {
+    const openai = createOpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    const assistant = defineAgent({
+      name: "assistant",
+      model: openai.text("gpt-5-mini"),
+      instruction: "You are a concise assistant. Keep replies short and natural.",
+    });
+
+    return betterAgent({
+      agents: [assistant],
+      baseURL: "/api",
+      secret: "dev-secret",
+    });
+  }
+}
+```
+
+## Mount the handler
+
+Use Nest bootstrap to bridge Nest's underlying Express instance into Better Agent's standard handler.
+
+```ts title="src/main.ts"
+import "dotenv/config";
+import { NestFactory } from "@nestjs/core";
+import type { Express } from "express";
+import { AppModule } from "./app.module.js";
+import { ServerService } from "./server.service.js";
+import { toExpressHandler } from "@better-agent/adapters/express";
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  const expressApp = app.getHttpAdapter().getInstance() as Express;
+  const serverService = app.get(ServerService);
+  const agentApp = await serverService.getAgentApp();
+
+  expressApp.use("/api", toExpressHandler(agentApp));
+
+  await app.listen(3000);
+}
+
+bootstrap();
+```
+
+## Register the service
+
+Register the Better Agent service in your Nest module.
+
+```ts title="app.module.ts"
+import { Module } from "@nestjs/common";
+import { ServerService } from "./server.service.js";
+
+@Module({
+  imports: [],
+  controllers: [],
+  providers: [ServerService],
+})
+export class AppModule {}
+```
+
+<Callout type="info">
+  Keep `baseURL` and the mounted route aligned. If the Better Agent app uses `baseURL: "/api"`, mount it under `/api`.
+</Callout>
