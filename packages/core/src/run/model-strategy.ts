@@ -1,5 +1,6 @@
 import { BetterAgentError } from "@better-agent/shared/errors";
 import type { Event } from "../events";
+import type { AgentToolDefinition, ToolTarget } from "../tools";
 import type { ModelCallStrategy } from "./types";
 
 const getAssistantMessageIdFromEvent = (event: Event): string | undefined => {
@@ -22,6 +23,51 @@ const getAssistantMessageIdFromEvent = (event: Event): string | undefined => {
     }
 
     return undefined;
+};
+
+const resolveToolTarget = (
+    tools: AgentToolDefinition[],
+    toolCallName: string,
+): ToolTarget | undefined => {
+    const tool = tools.find((candidate) => {
+        if (candidate.kind === "hosted") {
+            return candidate.name === toolCallName || candidate.type === toolCallName;
+        }
+
+        return candidate.name === toolCallName;
+    });
+
+    if (!tool) {
+        return undefined;
+    }
+
+    return tool.kind;
+};
+
+const enrichToolEvent = (
+    event: Event,
+    params: {
+        runId: string;
+        agentName: string;
+        tools: AgentToolDefinition[];
+    },
+): Event => {
+    switch (event.type) {
+        case "TOOL_CALL_START":
+        case "TOOL_CALL_ARGS":
+        case "TOOL_CALL_END":
+        case "TOOL_CALL_RESULT": {
+            const toolTarget = resolveToolTarget(params.tools, event.toolCallName);
+            return {
+                ...event,
+                runId: params.runId,
+                agentName: params.agentName,
+                ...(toolTarget !== undefined ? { toolTarget } : {}),
+            };
+        }
+        default:
+            return event;
+    }
 };
 
 export const createRunModelCallStrategy = <TContext>(): ModelCallStrategy<TContext> => ({
@@ -77,9 +123,15 @@ export const createRunModelCallStrategy = <TContext>(): ModelCallStrategy<TConte
 
         const { response, events } = responseResult.value;
         for (const event of events ?? []) {
-            assistantMessageId = getAssistantMessageIdFromEvent(event) ?? assistantMessageId;
+            const enrichedEvent = enrichToolEvent(event, {
+                runId: params.runId,
+                agentName: params.agentName,
+                tools: params.tools,
+            });
+            assistantMessageId =
+                getAssistantMessageIdFromEvent(enrichedEvent) ?? assistantMessageId;
             await options.emit({
-                ...event,
+                ...enrichedEvent,
             });
         }
 
@@ -149,10 +201,15 @@ export const createStreamModelCallStrategy = <TContext>(): ModelCallStrategy<TCo
                 throw eventResult.error;
             }
 
+            const enrichedEvent = enrichToolEvent(eventResult.value, {
+                runId: params.runId,
+                agentName: params.agentName,
+                tools: params.tools,
+            });
             assistantMessageId =
-                getAssistantMessageIdFromEvent(eventResult.value) ?? assistantMessageId;
+                getAssistantMessageIdFromEvent(enrichedEvent) ?? assistantMessageId;
             await options.emit({
-                ...eventResult.value,
+                ...enrichedEvent,
             });
         }
 

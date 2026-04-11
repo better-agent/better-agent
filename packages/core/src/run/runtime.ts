@@ -314,7 +314,7 @@ export function createRuntime<const TAgents extends readonly AnyAgentDefinition[
         if (params.saveConversationParams) {
             await saveConversationMessages({
                 ...params.saveConversationParams,
-                result: { ...params.result, items: itemsToSave },
+                result: { items: itemsToSave },
             });
         }
 
@@ -533,7 +533,7 @@ export function createRuntime<const TAgents extends readonly AnyAgentDefinition[
             } finally {
                 execution.cleanupSignal();
             }
-        }) as unknown as BetterAgentRuntime<TAgents>["run"],
+        }) as BetterAgentRuntime<TAgents>["run"],
 
         stream: (<TContext, TOutput extends OutputSchemaDefinition | undefined = undefined>(
             agent: TAgents[number]["name"],
@@ -709,7 +709,7 @@ export function createRuntime<const TAgents extends readonly AnyAgentDefinition[
                 events: queue.iterate(),
                 result,
             };
-        }) as unknown as BetterAgentRuntime<TAgents>["stream"],
+        }) as BetterAgentRuntime<TAgents>["stream"],
 
         loadConversation: async <TName extends TAgents[number]["name"]>(
             agent: TName,

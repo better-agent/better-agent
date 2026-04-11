@@ -913,7 +913,7 @@ export async function saveConversationMessages(params: {
     conversations?: ConversationStore;
     conversationId?: string;
     agentName?: string;
-    result: RunResult & { items: ConversationItem[] };
+    result: { items: ConversationItem[] };
     loaded?: LoadedConversation;
 }): Promise<void> {
     if (!params.conversations || params.conversationId === undefined) {
