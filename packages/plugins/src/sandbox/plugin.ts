@@ -2,7 +2,7 @@ import { type Plugin, type ToolRunContext, defineTool } from "@better-agent/core
 import { BetterAgentError } from "@better-agent/shared/errors";
 import { createMemorySandboxSessionStore } from "./memory-store";
 import type { SandboxCreateParams, SandboxPluginConfig } from "./types";
-import { validateSandboxPluginConfig } from "./validate";
+import { validateSandboxCreateParams, validateSandboxPluginConfig } from "./validate";
 
 const trimToUndefined = (value: string | undefined): string | undefined => {
     const trimmed = value?.trim();
@@ -33,6 +33,42 @@ type SessionPolicy =
           kind: "disabled";
       };
 
+const resolveCreateParams = (
+    overrides: SandboxCreateParams | undefined,
+    createConfig: SandboxCreateParams | undefined,
+    createDefaults: SandboxCreateParams | undefined,
+): SandboxCreateParams => ({
+    template: createConfig?.template ?? overrides?.template ?? createDefaults?.template,
+    startupTimeoutMs:
+        createConfig?.startupTimeoutMs ??
+        overrides?.startupTimeoutMs ??
+        createDefaults?.startupTimeoutMs,
+    envs:
+        createDefaults?.envs || overrides?.envs || createConfig?.envs
+            ? {
+                  ...(createDefaults?.envs ?? {}),
+                  ...(overrides?.envs ?? {}),
+                  ...(createConfig?.envs ?? {}),
+              }
+            : undefined,
+    metadata:
+        createDefaults?.metadata || overrides?.metadata || createConfig?.metadata
+            ? {
+                  ...(createDefaults?.metadata ?? {}),
+                  ...(overrides?.metadata ?? {}),
+                  ...(createConfig?.metadata ?? {}),
+              }
+            : undefined,
+    lifecycle:
+        createDefaults?.lifecycle || overrides?.lifecycle || createConfig?.lifecycle
+            ? {
+                  ...(createDefaults?.lifecycle ?? {}),
+                  ...(overrides?.lifecycle ?? {}),
+                  ...(createConfig?.lifecycle ?? {}),
+              }
+            : undefined,
+});
+
 /**
  * Adds sandbox tools.
  *
@@ -50,25 +86,27 @@ type SessionPolicy =
  *   client: createE2BSandboxClient({
  *     apiKey: process.env.E2B_API_KEY,
  *   }),
- *   defaults: {
+ *   createConfig: {
  *     template: "base",
- *     timeoutMs: 10 * 60_000,
+ *   },
+ *   createDefaults: {
+ *     startupTimeoutMs: 90_000,
  *   },
  * });
  * ```
  */
-export const sandboxPlugin = (config: SandboxPluginConfig): Plugin => {
-    validateSandboxPluginConfig(config);
+export const sandboxPlugin = (pluginConfig: SandboxPluginConfig): Plugin => {
+    validateSandboxPluginConfig(pluginConfig);
 
-    const sandboxClient = config.client;
-    const store = config.store ?? createMemorySandboxSessionStore();
-    const prefix = trimToUndefined(config.prefix) ?? "sandbox";
+    const sandboxClient = pluginConfig.client;
+    const store = pluginConfig.store ?? createMemorySandboxSessionStore();
+    const prefix = trimToUndefined(pluginConfig.prefix) ?? "sandbox";
     const nameFor = (suffix: string) => `${prefix}_${suffix}`;
 
     const getSessionPolicy = (ctx: ToolRunContext, toolName: string): SessionPolicy => {
-        if (config.sessionKey) {
+        if (pluginConfig.sessionKey) {
             const custom = trimToUndefined(
-                config.sessionKey({
+                pluginConfig.sessionKey({
                     runId: ctx.runId,
                     agentName: ctx.agentName,
                     ...(ctx.conversationId !== undefined
@@ -110,12 +148,13 @@ export const sandboxPlugin = (config: SandboxPluginConfig): Plugin => {
         toolName: string,
     ): Promise<ResolvedSandboxRef> => {
         const sessionPolicy = getSessionPolicy(ctx, toolName);
-        const created = await sandboxClient.createSandbox({
-            template: params?.template ?? config.defaults?.template,
-            timeoutMs: params?.timeoutMs ?? config.defaults?.timeoutMs,
-            envs: params?.envs ?? config.defaults?.envs,
-            metadata: params?.metadata ?? config.defaults?.metadata,
-        });
+        const resolvedParams = resolveCreateParams(
+            params,
+            pluginConfig.createConfig,
+            pluginConfig.createDefaults,
+        );
+        validateSandboxCreateParams(sandboxClient.provider, resolvedParams);
+        const created = await sandboxClient.createSandbox(resolvedParams);
 
         if (sessionPolicy.kind === "managed") {
             await store.set(sessionPolicy.sessionKey, created.sandboxId);
@@ -194,7 +233,7 @@ export const sandboxPlugin = (config: SandboxPluginConfig): Plugin => {
         properties: {
             forceNew: { type: "boolean" },
             template: { type: "string" },
-            timeoutMs: { type: "number", exclusiveMinimum: 0 },
+            startupTimeoutMs: { type: "number", exclusiveMinimum: 0 },
             envs: {
                 type: "object",
                 additionalProperties: { type: "string" },
@@ -202,6 +241,16 @@ export const sandboxPlugin = (config: SandboxPluginConfig): Plugin => {
             metadata: {
                 type: "object",
                 additionalProperties: { type: "string" },
+            },
+            lifecycle: {
+                type: "object",
+                properties: {
+                    ttlMs: { type: "number", exclusiveMinimum: 0 },
+                    idleStopMs: { type: "number", exclusiveMinimum: 0 },
+                    archiveAfterMs: { type: "number", exclusiveMinimum: 0 },
+                    deleteAfterMs: { type: "number", exclusiveMinimum: 0 },
+                },
+                additionalProperties: false,
             },
         },
         additionalProperties: false,
@@ -247,9 +296,10 @@ export const sandboxPlugin = (config: SandboxPluginConfig): Plugin => {
         const resolved = await createSandbox(
             {
                 template: input.template,
-                timeoutMs: input.timeoutMs,
+                startupTimeoutMs: input.startupTimeoutMs,
                 envs: input.envs,
                 metadata: input.metadata,
+                lifecycle: input.lifecycle,
             },
             ctx,
             nameFor("create"),
@@ -279,7 +329,7 @@ export const sandboxPlugin = (config: SandboxPluginConfig): Plugin => {
             required: ["cmd"],
             additionalProperties: false,
         } as const,
-        approval: config.approvals?.exec,
+        approval: pluginConfig.approvals?.exec,
     }).server(async (input, ctx) => {
         const resolved = await resolveSandbox({
             sandboxId: input.sandboxId,
@@ -347,7 +397,7 @@ export const sandboxPlugin = (config: SandboxPluginConfig): Plugin => {
             required: ["path", "content"],
             additionalProperties: false,
         } as const,
-        approval: config.approvals?.writeFile,
+        approval: pluginConfig.approvals?.writeFile,
     }).server(async (input, ctx) => {
         const resolved = await resolveSandbox({
             sandboxId: input.sandboxId,
@@ -443,7 +493,7 @@ export const sandboxPlugin = (config: SandboxPluginConfig): Plugin => {
             required: ["path"],
             additionalProperties: false,
         } as const,
-        approval: config.approvals?.removePath,
+        approval: pluginConfig.approvals?.removePath,
     }).server(async (input, ctx) => {
         const resolved = await resolveSandbox({
             sandboxId: input.sandboxId,
@@ -509,7 +559,7 @@ export const sandboxPlugin = (config: SandboxPluginConfig): Plugin => {
             },
             additionalProperties: false,
         } as const,
-        approval: config.approvals?.killSandbox,
+        approval: pluginConfig.approvals?.killSandbox,
     }).server(async (input, ctx) => {
         const resolved = await resolveSandbox({
             sandboxId: input.sandboxId,
@@ -549,7 +599,7 @@ export const sandboxPlugin = (config: SandboxPluginConfig): Plugin => {
     ];
 
     const plugin: Plugin = {
-        id: config.id ?? "sandbox",
+        id: pluginConfig.id ?? "sandbox",
         tools,
     };
 

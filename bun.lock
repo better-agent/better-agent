@@ -270,7 +270,7 @@
     },
     "packages/adapters": {
       "name": "@better-agent/adapters",
-      "version": "0.1.0-beta.3",
+      "version": "0.1.0-canary.6",
       "devDependencies": {
         "@better-agent/core": "workspace:*",
         "@types/bun": "^1.2.18",
@@ -286,7 +286,7 @@
     },
     "packages/cli": {
       "name": "@better-agent/cli",
-      "version": "0.1.0-beta.3",
+      "version": "0.1.0-canary.6",
       "bin": {
         "better-agent": "./dist/index.mjs",
       },
@@ -307,7 +307,7 @@
     },
     "packages/client": {
       "name": "@better-agent/client",
-      "version": "0.1.0-beta.3",
+      "version": "0.1.0-canary.6",
       "dependencies": {
         "@better-agent/core": "workspace:*",
         "@better-agent/shared": "workspace:*",
@@ -343,7 +343,7 @@
     },
     "packages/core": {
       "name": "@better-agent/core",
-      "version": "0.1.0-beta.3",
+      "version": "0.1.0-canary.6",
       "dependencies": {
         "@better-agent/shared": "workspace:*",
         "@standard-schema/spec": "1.1.0",
@@ -357,7 +357,7 @@
     },
     "packages/create": {
       "name": "create-better-agent",
-      "version": "0.1.0-beta.3",
+      "version": "0.1.0-canary.6",
       "bin": {
         "create-better-agent": "./dist/index.mjs",
       },
@@ -373,7 +373,7 @@
     },
     "packages/plugins": {
       "name": "@better-agent/plugins",
-      "version": "0.1.0-beta.3",
+      "version": "0.1.0-canary.6",
       "dependencies": {
         "@better-agent/shared": "workspace:*",
       },
@@ -389,7 +389,7 @@
     },
     "packages/providers": {
       "name": "@better-agent/providers",
-      "version": "0.1.0-beta.3",
+      "version": "0.1.0-canary.6",
       "dependencies": {
         "@better-agent/shared": "workspace:*",
         "zod": "^4.1.13",
@@ -404,7 +404,7 @@
     },
     "packages/shared": {
       "name": "@better-agent/shared",
-      "version": "0.1.0-beta.3",
+      "version": "0.1.0-canary.6",
       "dependencies": {
         "neverthrow": "^8.2.0",
       },

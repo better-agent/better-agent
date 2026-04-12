@@ -34,6 +34,74 @@ bun add e2b
 bun add @daytonaio/sdk
 ```
 
+## Core Concepts
+
+Every sandbox plugin setup has three moving parts:
+
+- `client`: the sandbox provider adapter, such as E2B or Daytona
+- `createConfig`: fixed sandbox creation settings that model overrides cannot overwrite
+- `createDefaults`: fallback sandbox creation settings used only when nothing else provided a value
+
+The plugin also manages sandbox reuse automatically by conversation unless you override that behavior with `sessionKey` or pass an explicit `sandboxId`.
+
+## Shared Create Model
+
+Use `sandboxPlugin({ createConfig, createDefaults })` to configure shared sandbox creation behavior.
+
+These fields are provider-agnostic:
+
+- `template`: what the sandbox should be created from
+- `startupTimeoutMs`: how long to wait for sandbox creation or readiness
+- `envs`: environment variables set at create time
+- `metadata`: labels or metadata set at create time
+- `lifecycle.ttlMs`: maximum sandbox lifetime
+- `lifecycle.idleStopMs`: stop after inactivity
+- `lifecycle.archiveAfterMs`: archive after the sandbox has stopped
+- `lifecycle.deleteAfterMs`: delete after the sandbox has stopped
+
+Use `createConfig` when you want every auto-created sandbox to use fixed settings that model overrides cannot overwrite.
+
+```ts
+const plugin = sandboxPlugin({
+  client: createDaytonaSandboxClient({
+    apiKey: process.env.DAYTONA_API_KEY,
+  }),
+  createConfig: {
+    template: "base-dev-env",
+    envs: {
+      NODE_ENV: "development",
+    },
+    lifecycle: {
+      idleStopMs: 60 * 60_000,
+      deleteAfterMs: 24 * 60 * 60_000,
+    },
+  },
+  createDefaults: {
+    startupTimeoutMs: 90_000,
+  },
+});
+```
+
+Use `createDefaults` for fallback values that should apply only when neither your app config nor a model override provided a value.
+The precedence order is `createConfig`, then model override, then `createDefaults`.
+
+## Provider Support
+
+Use these shared create fields consistently across providers:
+
+| Field | Meaning | E2B | Daytona |
+| --- | --- | --- | --- |
+| `template` | Base template, snapshot, or image to create from | Supported | Supported via `templateKind` |
+| `startupTimeoutMs` | How long to wait for sandbox creation/readiness | Not supported | Supported |
+| `envs` | Environment variables set at create time | Supported | Supported |
+| `metadata` | Labels or metadata set at create time | Supported | Supported |
+| `lifecycle.ttlMs` | Maximum sandbox lifetime | Supported | Not supported |
+| `lifecycle.idleStopMs` | Stop after inactivity | Not supported | Supported |
+| `lifecycle.archiveAfterMs` | Archive after the sandbox has stopped | Not supported | Supported |
+| `lifecycle.deleteAfterMs` | Delete after the sandbox has stopped | Not supported | Supported |
+
+The built-in E2B and Daytona clients validate these differences and throw a validation error when you configure unsupported fields.
+
 ## Quick Start With E2B
 
 ```ts
@@ -70,9 +138,14 @@ export const app = betterAgent({
       client: createDaytonaSandboxClient({
         apiKey: process.env.DAYTONA_API_KEY,
         target: process.env.DAYTONA_TARGET,
-        template: "node:20",
         templateKind: "image",
       }),
+      createConfig: {
+        template: "node:20",
+        lifecycle: {
+          idleStopMs: 60 * 60_000,
+        },
+      },
     }),
   ],
 });
@@ -147,27 +220,6 @@ await app.run("coder", {
 ```
 
 In that tool call, `sandboxId` tells the plugin to use the existing sandbox instead of looking up the managed sandbox for the current conversation.
-
-## Useful Defaults
-
-Use `defaults` when you want every auto-created sandbox to start the same way.
-
-```ts
-const plugin = sandboxPlugin({
-  client: createDaytonaSandboxClient({
-    apiKey: process.env.DAYTONA_API_KEY,
-  }),
-  defaults: {
-    template: "base-dev-env",
-    timeoutMs: 10 * 60_000,
-    envs: {
-      NODE_ENV: "development",
-    },
-  },
-});
-```
-
-This is useful when your agents always need the same template, environment variables, or timeout settings.
 
 ## Approval Controls
 

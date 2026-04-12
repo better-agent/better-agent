@@ -49,7 +49,6 @@ type PreparedToolCall = {
     skipResult?: unknown;
     parseError?: BetterAgentError;
     validationError?: BetterAgentError;
-    shouldEmitToolCallEnd: boolean;
 };
 
 const getToolRunName = (tool: AgentToolDefinition): string | undefined =>
@@ -180,55 +179,6 @@ export const executeToolCalls = async <TContext>(params: {
                 args.retryable ??
                 (args.error instanceof BetterAgentError ? args.error.retryable : undefined),
         });
-
-    const emitToolCallStart = async (prepared: {
-        toolCall: GenerativeModelToolCallRequest;
-        toolTarget: "server" | "client";
-    }) => {
-        await params.emit({
-            type: Events.TOOL_CALL_START,
-            runId: params.runId,
-            agentName: params.agentName,
-            parentMessageId: params.parentMessageId,
-            toolCallId: prepared.toolCall.callId,
-            toolCallName: prepared.toolCall.name,
-            toolTarget: prepared.toolTarget,
-            timestamp: Date.now(),
-        });
-    };
-
-    const emitToolCallArgs = async (prepared: {
-        toolCall: GenerativeModelToolCallRequest;
-        toolTarget: "server" | "client";
-    }) => {
-        await params.emit({
-            type: Events.TOOL_CALL_ARGS,
-            runId: params.runId,
-            agentName: params.agentName,
-            parentMessageId: params.parentMessageId,
-            toolCallId: prepared.toolCall.callId,
-            toolCallName: prepared.toolCall.name,
-            delta: prepared.toolCall.arguments,
-            toolTarget: prepared.toolTarget,
-            timestamp: Date.now(),
-        });
-    };
-
-    const emitToolCallEnd = async (prepared: {
-        toolCall: GenerativeModelToolCallRequest;
-        toolTarget: "server" | "client";
-    }) => {
-        await params.emit({
-            type: Events.TOOL_CALL_END,
-            runId: params.runId,
-            agentName: params.agentName,
-            parentMessageId: params.parentMessageId,
-            toolCallId: prepared.toolCall.callId,
-            toolCallName: prepared.toolCall.name,
-            toolTarget: prepared.toolTarget,
-            timestamp: Date.now(),
-        });
-    };
 
     const emitToolCallResult = async (
         prepared: PreparedToolCall,
@@ -722,7 +672,6 @@ export const executeToolCalls = async <TContext>(params: {
                     toolTarget,
                 }),
                 skip: false,
-                shouldEmitToolCallEnd: false,
             };
 
             return await executeApprovedInput(prepared, validatedInput.value, recoveryDepth);
@@ -736,7 +685,6 @@ export const executeToolCalls = async <TContext>(params: {
                     tool,
                     toolTarget,
                     skip: false,
-                    shouldEmitToolCallEnd: false,
                     parseError: BetterAgentError.wrap({
                         err: parsed.error,
                         message: `Failed to parse arguments for tool '${toolCall.name}'`,
@@ -772,7 +720,6 @@ export const executeToolCalls = async <TContext>(params: {
                     args: beforeHook.args,
                     skip: true,
                     skipResult: beforeHook.decision.result,
-                    shouldEmitToolCallEnd: true,
                 };
             }
 
@@ -784,7 +731,6 @@ export const executeToolCalls = async <TContext>(params: {
                     toolTarget,
                     args: beforeHook.args,
                     skip: false,
-                    shouldEmitToolCallEnd: false,
                     validationError: validatedInput.error.at({
                         at: "core.run.executeToolCalls.validateToolInput",
                     }),
@@ -805,7 +751,6 @@ export const executeToolCalls = async <TContext>(params: {
                     toolTarget,
                 }),
                 skip: false,
-                shouldEmitToolCallEnd: true,
             };
 
             if (prepared.resolvedApproval?.required) {
@@ -874,13 +819,7 @@ export const executeToolCalls = async <TContext>(params: {
             };
         };
 
-        await emitToolCallStart({ toolCall, toolTarget });
-        await emitToolCallArgs({ toolCall, toolTarget });
-
         const prepared = await prepareToolCall();
-        if (prepared.shouldEmitToolCallEnd) {
-            await emitToolCallEnd(prepared);
-        }
 
         const outcome = await executePreparedTool(prepared);
         const finalOutcome = await applyAfterToolCall(prepared, outcome);

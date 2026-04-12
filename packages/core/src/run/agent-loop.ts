@@ -83,7 +83,7 @@ export const runAgentLoop = async <TContext>(
         context: options.context,
     };
 
-    const instructionField = "instruction" in options.agent ? options.agent.instruction : undefined;
+    const instructionField = options.agent.instruction;
     const instructionResolver = instructionField as ((context: TContext) => string) | undefined;
     const instruction =
         typeof instructionResolver === "function"
@@ -179,9 +179,7 @@ export const runAgentLoop = async <TContext>(
                               ),
                           );
 
-                const effectiveInstruction = (prepared.systemInstruction ?? instruction) as
-                    | GenerativeModelInputMessageContent<typeof modelCaps>
-                    | undefined;
+                const effectiveInstruction = prepared.systemInstruction ?? instruction;
                 assertInstructionSupported(
                     effectiveInstruction,
                     `${traceBase}.prepareModelInput.validateInstruction`,

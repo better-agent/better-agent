@@ -1,6 +1,6 @@
 {
     "name": "create-better-agent",
-    "version": "0.1.0-beta.3",
+    "version": "0.1.0-canary.6",
     "description": "Initialize Better Agent in an existing app",
     "license": "MIT",
     "type": "module",
