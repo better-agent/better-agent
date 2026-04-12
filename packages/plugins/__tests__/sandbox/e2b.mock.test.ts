@@ -153,13 +153,14 @@ describe("createE2BSandboxClient", () => {
             apiKey: "e2b-key",
             domain: "e2b.example",
             requestTimeoutMs: 2_000,
-            template: "base-template",
-            timeoutMs: 10_000,
-            envs: { NODE_ENV: "test" },
-            metadata: { team: "plugins" },
         });
 
-        const created = await client.createSandbox();
+        const created = await client.createSandbox({
+            template: "base-template",
+            envs: { NODE_ENV: "test" },
+            metadata: { team: "plugins" },
+            lifecycle: { ttlMs: 10_000 },
+        });
         const command = await client.runCommand({
             sandboxId: created.sandboxId,
             cmd: "pwd",
@@ -265,9 +266,9 @@ describe("createE2BSandboxClient", () => {
         });
 
         await client.createSandbox({
-            timeoutMs: 2_000,
             envs: { MODE: "bare" },
             metadata: { owner: "plugins" },
+            lifecycle: { ttlMs: 2_000 },
         });
 
         expect(createCalls).toEqual([
@@ -284,7 +285,7 @@ describe("createE2BSandboxClient", () => {
         ]);
     });
 
-    test("prefers per-call create options over config defaults", async () => {
+    test("forwards shared create fields from createSandbox params", async () => {
         const createCalls: CreateCall[] = [];
         const sandbox = createSandboxStub({ sandboxId: "e2b-override" });
 
@@ -302,17 +303,13 @@ describe("createE2BSandboxClient", () => {
 
         const client = createE2BSandboxClient({
             apiKey: "config-key",
-            template: "config-template",
-            timeoutMs: 10_000,
-            envs: { DEFAULT: "1" },
-            metadata: { level: "config" },
         });
 
         await client.createSandbox({
             template: "call-template",
-            timeoutMs: 5_000,
             envs: { CALL: "1" },
             metadata: { level: "call" },
+            lifecycle: { ttlMs: 5_000 },
         });
 
         expect(createCalls).toEqual([

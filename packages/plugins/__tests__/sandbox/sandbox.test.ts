@@ -14,11 +14,13 @@ const createDriver = () => {
     const commands: Array<{ sandboxId: string; cmd: string }> = [];
     const removed: Array<{ sandboxId: string; path: string }> = [];
     const killed: string[] = [];
+    const createCalls: Array<Record<string, unknown> | undefined> = [];
 
     const driver: SandboxClient = {
-        async createSandbox() {
+        async createSandbox(params) {
             const sandboxId = `sbx-${created.length + 1}`;
             created.push(sandboxId);
+            createCalls.push(params as Record<string, unknown> | undefined);
             return { sandboxId };
         },
         async runCommand(params) {
@@ -57,6 +59,7 @@ const createDriver = () => {
         commands,
         removed,
         killed,
+        createCalls,
     };
 };
 
@@ -96,6 +99,47 @@ const getServerTool = async (
 };
 
 describe("sandboxPlugin", () => {
+    test("rejects ttl lifecycle settings for Daytona", () => {
+        const state = createDriver();
+        state.driver.provider = "daytona";
+
+        expect(() =>
+            sandboxPlugin({
+                client: state.driver,
+                createConfig: {
+                    lifecycle: {
+                        ttlMs: 60_000,
+                    },
+                },
+            }),
+        ).toThrow(/lifecycle\.ttlMs/);
+    });
+
+    test("rejects startup and Daytona-style lifecycle settings for E2B", () => {
+        const state = createDriver();
+        state.driver.provider = "e2b";
+
+        expect(() =>
+            sandboxPlugin({
+                client: state.driver,
+                createConfig: {
+                    startupTimeoutMs: 30_000,
+                },
+            }),
+        ).toThrow(/startupTimeoutMs/);
+
+        expect(() =>
+            sandboxPlugin({
+                client: state.driver,
+                createConfig: {
+                    lifecycle: {
+                        idleStopMs: 60_000,
+                    },
+                },
+            }),
+        ).toThrow(/idleStopMs/);
+    });
+
     test("reuses one sandbox across one conversation when configured with client", async () => {
         const state = createDriver();
         const plugin = sandboxPlugin({ client: state.driver });
@@ -224,6 +268,111 @@ describe("sandboxPlugin", () => {
         );
 
         expect(state.created).toEqual(["sbx-1", "sbx-2"]);
+    });
+
+    test("resolves scalar create params as createConfig, then input, then createDefaults", async () => {
+        const state = createDriver();
+        const plugin = sandboxPlugin({
+            client: state.driver,
+            createConfig: {
+                template: "trusted-template",
+            },
+            createDefaults: {
+                template: "default-template",
+                startupTimeoutMs: 30_000,
+            },
+        });
+        const createTool = await getServerTool(plugin, "sandbox_create");
+
+        await createTool.handler(
+            {
+                forceNew: true,
+                template: "llm-template",
+                startupTimeoutMs: 5_000,
+            },
+            createToolContext(),
+        );
+
+        expect(state.createCalls).toEqual([
+            {
+                template: "trusted-template",
+                startupTimeoutMs: 5_000,
+                envs: undefined,
+                metadata: undefined,
+                lifecycle: undefined,
+            },
+        ]);
+    });
+
+    test("merges envs and metadata with createConfig winning over input and createDefaults", async () => {
+        const state = createDriver();
+        const plugin = sandboxPlugin({
+            client: state.driver,
+            createConfig: {
+                envs: {
+                    API_URL: "https://trusted.example.test",
+                },
+                metadata: {
+                    owner: "user",
+                },
+                lifecycle: {
+                    deleteAfterMs: 120_000,
+                },
+            },
+            createDefaults: {
+                envs: {
+                    FEATURE_FLAG: "disabled",
+                },
+                metadata: {
+                    region: "eu-west-1",
+                },
+                lifecycle: {
+                    idleStopMs: 60_000,
+                    archiveAfterMs: 180_000,
+                },
+            },
+        });
+        const createTool = await getServerTool(plugin, "sandbox_create");
+
+        await createTool.handler(
+            {
+                forceNew: true,
+                envs: {
+                    FEATURE_FLAG: "enabled",
+                    EXTRA: "1",
+                },
+                metadata: {
+                    owner: "assistant",
+                    note: "from-input",
+                },
+                lifecycle: {
+                    idleStopMs: 90_000,
+                },
+            },
+            createToolContext(),
+        );
+
+        expect(state.createCalls).toEqual([
+            {
+                template: undefined,
+                startupTimeoutMs: undefined,
+                envs: {
+                    FEATURE_FLAG: "enabled",
+                    EXTRA: "1",
+                    API_URL: "https://trusted.example.test",
+                },
+                metadata: {
+                    region: "eu-west-1",
+                    owner: "user",
+                    note: "from-input",
+                },
+                lifecycle: {
+                    idleStopMs: 90_000,
+                    archiveAfterMs: 180_000,
+                    deleteAfterMs: 120_000,
+                },
+            },
+        ]);
     });
 
     for (const testCase of [

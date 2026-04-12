@@ -67,7 +67,9 @@ const loadE2B = async (): Promise<E2BSandboxModule> => {
     }
 };
 
-/** Creates a sandbox client backed by the E2B SDK. */
+/**
+ * Creates a sandbox client backed by the E2B SDK.
+ */
 export function createE2BSandboxClient(config: E2BSandboxClientConfig = {}): SandboxClient {
     const connectionOptions = removeUndefined({
         apiKey: config.apiKey,
@@ -76,17 +78,18 @@ export function createE2BSandboxClient(config: E2BSandboxClientConfig = {}): San
         requestTimeoutMs: config.requestTimeoutMs,
     });
 
-    const toCreateOptions = (overrides?: {
-        template?: string;
-        timeoutMs?: number;
+    const toCreateOptions = (params?: {
+        lifecycle?: {
+            ttlMs?: number;
+        };
         envs?: Record<string, string>;
         metadata?: Record<string, string>;
     }) =>
         removeUndefined({
             ...connectionOptions,
-            timeoutMs: overrides?.timeoutMs ?? config.timeoutMs,
-            envs: overrides?.envs ?? config.envs,
-            metadata: overrides?.metadata ?? config.metadata,
+            timeoutMs: params?.lifecycle?.ttlMs,
+            envs: params?.envs,
+            metadata: params?.metadata,
         });
 
     const connectSandbox = async (sandboxId: string): Promise<E2BSandboxInstance> => {
@@ -115,7 +118,7 @@ export function createE2BSandboxClient(config: E2BSandboxClientConfig = {}): San
         },
         async createSandbox(params) {
             const { Sandbox } = await loadE2B();
-            const template = params?.template ?? config.template;
+            const template = params?.template;
             const options = toCreateOptions(params);
 
             const sandbox =
