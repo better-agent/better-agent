@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { TOOL_JSON_SCHEMA } from "@better-agent/core";
-import { mapFromOpenRouterChatCompletion, mapToOpenRouterChatCompletionsRequest } from "../../src/openrouter/responses";
+import {
+    createOpenRouterStreamState,
+    mapFromOpenRouterChatCompletion,
+    mapFromOpenRouterChatCompletionChunk,
+    mapToOpenRouterChatCompletionsRequest,
+} from "../../src/openrouter/responses";
 
 describe("openrouter text request mapping", () => {
     test("maps multimodal input, structured output, and tool choice", () => {
@@ -145,5 +150,150 @@ describe("openrouter text request mapping", () => {
             },
         ]);
         expect(mapped.usage?.totalTokens).toBe(15);
+    });
+
+    test("maps audio input and audio output options", () => {
+        const mapped = mapToOpenRouterChatCompletionsRequest({
+            modelId: "openai/gpt-4o-audio-preview",
+            options: {
+                input: [
+                    {
+                        type: "message",
+                        role: "user",
+                        content: [
+                            { type: "text", text: "Please transcribe this clip." },
+                            {
+                                type: "audio",
+                                source: {
+                                    kind: "base64",
+                                    data: "QUJDRA==",
+                                    mimeType: "audio/wav",
+                                },
+                            },
+                        ],
+                    },
+                ],
+                modalities: ["text", "audio"],
+                audio: {
+                    voice: "alloy",
+                    format: "wav",
+                },
+            },
+        });
+        if (mapped.isErr()) throw mapped.error;
+
+        expect(mapped.value.messages).toEqual([
+            {
+                role: "user",
+                content: [
+                    { type: "text", text: "Please transcribe this clip." },
+                    {
+                        type: "input_audio",
+                        inputAudio: {
+                            data: "QUJDRA==",
+                            format: "wav",
+                        },
+                    },
+                ],
+            },
+        ]);
+        expect(mapped.value.modalities).toEqual(["text", "audio"]);
+        expect(mapped.value.audio).toEqual({
+            voice: "alloy",
+            format: "wav",
+        });
+    });
+
+    test("maps streamed audio and transcript deltas into final response", () => {
+        const state = createOpenRouterStreamState();
+        state.audioFormat = "wav";
+
+        const audioDelta = mapFromOpenRouterChatCompletionChunk(
+            {
+                choices: [
+                    {
+                        delta: {
+                            audio: {
+                                data: "QUJD",
+                            },
+                        },
+                    },
+                ],
+            },
+            state,
+        );
+        if (audioDelta.isErr()) throw audioDelta.error;
+        expect(audioDelta.value).toEqual({
+            kind: "audio-delta",
+            data: "QUJD",
+        });
+
+        const transcriptDelta = mapFromOpenRouterChatCompletionChunk(
+            {
+                choices: [
+                    {
+                        delta: {
+                            audio: {
+                                transcript: "Hello",
+                            },
+                        },
+                    },
+                ],
+            },
+            state,
+        );
+        if (transcriptDelta.isErr()) throw transcriptDelta.error;
+        expect(transcriptDelta.value).toEqual({
+            kind: "transcript-delta",
+            delta: "Hello",
+        });
+
+        const finalChunk = mapFromOpenRouterChatCompletionChunk(
+            {
+                choices: [
+                    {
+                        finish_reason: "stop",
+                    },
+                ],
+            },
+            state,
+        );
+        if (finalChunk.isErr()) throw finalChunk.error;
+        expect(finalChunk.value).toEqual({
+            kind: "final",
+            response: {
+                output: [
+                    {
+                        type: "message",
+                        role: "assistant",
+                        content: [
+                            {
+                                type: "audio",
+                                source: {
+                                    kind: "base64",
+                                    data: "QUJD",
+                                    mimeType: "audio/wav",
+                                },
+                            },
+                            {
+                                type: "transcript",
+                                text: "Hello",
+                            },
+                        ],
+                    },
+                ],
+                finishReason: "stop",
+                usage: {},
+                response: {
+                    body: {
+                        choices: [
+                            {
+                                finish_reason: "stop",
+                            },
+                        ],
+                    },
+                },
+            },
+        });
     });
 });

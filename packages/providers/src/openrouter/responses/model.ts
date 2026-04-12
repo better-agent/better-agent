@@ -11,6 +11,7 @@ import { type Result, err, ok } from "@better-agent/shared/neverthrow";
 import type { createOpenRouterClient } from "../client/create-client";
 import type { OpenRouterResponseGenerativeModel, OpenRouterResponseModelId } from "../types";
 import {
+    audioFormatToMimeType,
     createOpenRouterStreamState,
     mapFromOpenRouterChatCompletion,
     mapFromOpenRouterChatCompletionChunk,
@@ -19,7 +20,7 @@ import {
 import type { OpenRouterResponseCaps, OpenRouterResponseEndpointOptions } from "./types";
 
 export const OPENROUTER_RESPONSE_CAPS = {
-    inputModalities: { text: true, image: true, file: true },
+    inputModalities: { text: true, image: true, file: true, audio: true },
     inputShape: "chat",
     replayMode: "multi_turn",
     supportsInstruction: true,
@@ -28,6 +29,7 @@ export const OPENROUTER_RESPONSE_CAPS = {
             options: {},
         },
         image: true,
+        audio: true,
     },
     tools: true,
     structured_output: true,
@@ -101,7 +103,10 @@ export const createOpenRouterResponsesModel = <M extends OpenRouterResponseModel
         const events = (async function* (): AsyncGenerator<Result<Event, BetterAgentError>> {
             const messageId = ctx.generateMessageId();
             const state = createOpenRouterStreamState();
-            let started = false;
+            state.audioFormat = options.audio?.format;
+            let textStarted = false;
+            let audioStarted = false;
+            let transcriptStarted = false;
             let finished = false;
 
             try {
@@ -122,21 +127,25 @@ export const createOpenRouterResponsesModel = <M extends OpenRouterResponseModel
 
                     if (!mapped.value) continue;
 
-                    if (!started) {
-                        started = true;
-                        yield ok({
-                            type: Events.TEXT_MESSAGE_START,
-                            messageId,
-                            role: "assistant",
-                            timestamp: Date.now(),
-                        });
-                    }
-
                     if (mapped.value.kind === "final") {
                         finished = true;
-                        if (state.text.length > 0) {
+                        if (textStarted) {
                             yield ok({
                                 type: Events.TEXT_MESSAGE_END,
+                                messageId,
+                                timestamp: Date.now(),
+                            });
+                        }
+                        if (audioStarted) {
+                            yield ok({
+                                type: Events.AUDIO_MESSAGE_END,
+                                messageId,
+                                timestamp: Date.now(),
+                            });
+                        }
+                        if (transcriptStarted) {
+                            yield ok({
+                                type: Events.TRANSCRIPT_MESSAGE_END,
                                 messageId,
                                 timestamp: Date.now(),
                             });
@@ -148,12 +157,68 @@ export const createOpenRouterResponsesModel = <M extends OpenRouterResponseModel
                         return;
                     }
 
-                    yield ok({
-                        type: Events.TEXT_MESSAGE_CONTENT,
-                        messageId,
-                        delta: mapped.value.delta,
-                        timestamp: Date.now(),
-                    });
+                    if (mapped.value.kind === "text-delta") {
+                        if (!textStarted) {
+                            textStarted = true;
+                            yield ok({
+                                type: Events.TEXT_MESSAGE_START,
+                                messageId,
+                                role: "assistant",
+                                timestamp: Date.now(),
+                            });
+                        }
+
+                        yield ok({
+                            type: Events.TEXT_MESSAGE_CONTENT,
+                            messageId,
+                            delta: mapped.value.delta,
+                            timestamp: Date.now(),
+                        });
+                        continue;
+                    }
+
+                    if (mapped.value.kind === "audio-delta") {
+                        if (!audioStarted) {
+                            audioStarted = true;
+                            yield ok({
+                                type: Events.AUDIO_MESSAGE_START,
+                                messageId,
+                                role: "assistant",
+                                timestamp: Date.now(),
+                            });
+                        }
+
+                        yield ok({
+                            type: Events.AUDIO_MESSAGE_CONTENT,
+                            messageId,
+                            delta: {
+                                kind: "base64",
+                                data: mapped.value.data,
+                                mimeType: audioFormatToMimeType(state.audioFormat ?? "wav"),
+                            },
+                            timestamp: Date.now(),
+                        });
+                        continue;
+                    }
+
+                    if (mapped.value.kind === "transcript-delta") {
+                        if (!transcriptStarted) {
+                            transcriptStarted = true;
+                            yield ok({
+                                type: Events.TRANSCRIPT_MESSAGE_START,
+                                messageId,
+                                role: "assistant",
+                                timestamp: Date.now(),
+                            });
+                        }
+
+                        yield ok({
+                            type: Events.TRANSCRIPT_MESSAGE_CONTENT,
+                            messageId,
+                            delta: mapped.value.delta,
+                            timestamp: Date.now(),
+                        });
+                    }
                 }
             } finally {
                 if (!finished) {

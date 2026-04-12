@@ -61,6 +61,7 @@ export type GenerativeModelInputMessageContent<TModelCaps extends Capabilities =
 export type PromptInputMessage<TModelCaps extends Capabilities> = {
     type: "message";
     content: GenerativeModelInputMessageContent<TModelCaps>;
+    providerMetadata?: Record<string, unknown>;
     role?: never;
 };
 
@@ -71,6 +72,7 @@ export type ChatInputMessage<TModelCaps extends Capabilities> = {
     type: "message";
     role: GenerativeModelMessageRole<TModelCaps>;
     content: GenerativeModelInputMessageContent<TModelCaps>;
+    providerMetadata?: Record<string, unknown>;
 };
 
 /**

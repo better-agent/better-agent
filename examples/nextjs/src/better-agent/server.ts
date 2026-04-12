@@ -1,91 +1,85 @@
 import {
-  betterAgent,
-  createMemoryConversationRuntimeStateStore,
-  createMemoryConversationStore,
-  createMemoryStreamStore,
-  defineAgent,
+    betterAgent,
+    createMemoryConversationRuntimeStateStore,
+    createMemoryConversationStore,
+    createMemoryStreamStore,
+    defineAgent,
 } from "@better-agent/core";
 
-import { createOpenAI } from "@better-agent/providers/openai";
-import { createAnthropic } from "@better-agent/providers/anthropic";
+import { createE2BSandboxClient, rateLimitPlugin, sandboxPlugin } from "@better-agent/plugins";
 import { createOpenRouter } from "@better-agent/providers/openrouter";
-import { createXAI } from "@better-agent/providers/xai";
-import {
-  rateLimitPlugin,
-  sandboxPlugin,
-  createE2BSandboxClient,
-} from "@better-agent/plugins";
-
-const openaiProvider = createOpenAI({
-  apiKey: process.env.OPENAI_API_KEY ?? "your-openai-api-key",
-});
-
-const anthropicProvider = createAnthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY ?? "your-anthropic-api-key",
-});
-
-const xaiProvider = createXAI({
-  apiKey: process.env.XAI_API_KEY ?? "your-xai-api-key",
-});
 
 const openrouterProvider = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY ?? "your-openrouter-api-key",
-  siteURL:
-    process.env.OPENROUTER_SITE_URL ?? "http://localhost:3000",
-  appName: process.env.OPENROUTER_APP_NAME ?? "better-agent-nextjs-demo",
+    apiKey: process.env.OPENROUTER_API_KEY ?? "your-openrouter-api-key",
+    siteURL: process.env.OPENROUTER_SITE_URL ?? "http://localhost:3000",
+    appName: process.env.OPENROUTER_APP_NAME ?? "better-agent-nextjs-demo",
 });
 
-const openai = defineAgent({
-  name: "openai",
-  model: openaiProvider.model("gpt-4.1"),
-  instruction:
-    "You are a concise, practical assistant. Keep answers clear and direct.",
+const conciseInstruction = "You are a concise, practical assistant. Keep answers clear and direct.";
+
+const searchInstruction = `${conciseInstruction} Use web search when the user asks for current or recent information.`;
+
+const openrouterText = defineAgent({
+    name: "openrouter-text",
+    model: openrouterProvider.text("openai/gpt-5.4-mini"),
+    instruction: conciseInstruction,
 });
 
-const anthropic = defineAgent({
-  name: "anthropic",
-  model: anthropicProvider.text("claude-sonnet-4-6"),
-  instruction:
-    "You are a concise, practical assistant. Keep answers clear and direct.",
+const openrouterSearch = defineAgent({
+    name: "openrouter-search",
+    model: openrouterProvider.text("openai/gpt-5.4-mini"),
+    instruction: searchInstruction,
+    tools: [openrouterProvider.tools.webSearch({ search_context_size: "medium" })],
 });
 
-const xai = defineAgent({
-  name: "xai",
-  model: xaiProvider.text("grok-4"),
-  instruction:
-    "You are a concise, practical assistant. Keep answers clear and direct.",
+const openrouterFile = defineAgent({
+    name: "openrouter-file",
+    model: openrouterProvider.text("openai/gpt-5.4-mini"),
+    instruction: `${conciseInstruction} Read uploaded files when present and answer from their contents.`,
 });
 
-const openrouter = defineAgent({
-  name: "openrouter",
-  model: openrouterProvider.text("openai/gpt-5.4-mini"),
-  instruction:
-    "You are a concise, practical assistant. Keep answers clear and direct.",
+const openrouterAudio = defineAgent({
+    name: "openrouter-audio",
+    model: openrouterProvider.text("openai/gpt-4o-audio-preview"),
+    instruction: `${conciseInstruction} When audio is provided, transcribe it, summarize it when useful, and respond clearly.`,
+    defaultModalities: ["text", "audio"] as const,
+});
+
+const openrouterImage = defineAgent({
+    name: "openrouter-image",
+    model: openrouterProvider.image("google/gemini-3.1-flash-image-preview"),
+    defaultModalities: ["image"] as const,
 });
 
 const app = betterAgent({
-  agents: [openai, anthropic, xai, openrouter],
-  plugins: [
-    rateLimitPlugin({
-      windowMs: 60_000,
-      max: 30,
-    }),
-    sandboxPlugin({
-      client: createE2BSandboxClient({
-        apiKey: process.env.E2B_API_KEY,
-      }),
-    }),
-  ],
-  persistence: {
-    stream: createMemoryStreamStore(),
-    conversations: createMemoryConversationStore(),
-    runtimeState: createMemoryConversationRuntimeStateStore(),
-  },
-  advanced: {
-    onRequestDisconnect: "continue",
-  },
-  baseURL: "/agents",
-  secret: process.env.BETTER_AGENT_SECRET ?? "your-secret-here",
+    agents: [
+        openrouterText,
+        openrouterSearch,
+        openrouterFile,
+        openrouterAudio,
+        openrouterImage,
+    ],
+    plugins: [
+        rateLimitPlugin({
+            windowMs: 60_000,
+            max: 30,
+        }),
+        sandboxPlugin({
+            client: createE2BSandboxClient({
+                apiKey: process.env.E2B_API_KEY,
+            }),
+        }),
+    ],
+    persistence: {
+        stream: createMemoryStreamStore(),
+        conversations: createMemoryConversationStore(),
+        runtimeState: createMemoryConversationRuntimeStateStore(),
+    },
+    advanced: {
+        onRequestDisconnect: "continue",
+    },
+    baseURL: "/agents",
+    secret: process.env.BETTER_AGENT_SECRET ?? "your-secret-here",
 });
 
 export default app;

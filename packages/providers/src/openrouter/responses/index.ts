@@ -1,4 +1,5 @@
 export {
+    createOpenRouterStreamState,
     mapFromOpenRouterChatCompletion,
     mapFromOpenRouterChatCompletionChunk,
     mapToOpenRouterChatCompletionsRequest,

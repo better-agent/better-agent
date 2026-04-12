@@ -2,7 +2,7 @@ import type { Capabilities, GenerativeModel } from "@better-agent/core/providers
 import type { OpenRouterChatCompletionsRequestSchema } from "./schemas";
 
 export interface OpenRouterResponseCaps extends Capabilities {
-    inputModalities: { text: true; image: true; file: true };
+    inputModalities: { text: true; image: true; file: true; audio: true };
     inputShape: "chat";
     replayMode: "multi_turn";
     supportsInstruction: true;
@@ -15,6 +15,7 @@ export interface OpenRouterResponseCaps extends Capabilities {
             };
         };
         image: true;
+        audio: true;
     };
     tools: true;
     structured_output: true;
@@ -36,6 +37,7 @@ export type OpenRouterResponseEndpointOptions = {
     route?: OpenRouterChatCompletionsRequestSchema["route"];
     provider?: OpenRouterChatCompletionsRequestSchema["provider"];
     plugins?: OpenRouterChatCompletionsRequestSchema["plugins"];
+    audio?: OpenRouterChatCompletionsRequestSchema["audio"];
 };
 
 export type OpenRouterResponseGenerativeModel<

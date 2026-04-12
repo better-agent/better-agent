@@ -1,17 +1,60 @@
+import { Events } from "@better-agent/core/events";
+import type { Event } from "@better-agent/core/events";
 import type {
     GenerativeModelCallOptions,
     GenerativeModelImageSource,
     GenerativeModelResponse,
+    GenerativeModelUsage,
 } from "@better-agent/core/providers";
 import { BetterAgentError } from "@better-agent/shared/errors";
 import type { Result } from "@better-agent/shared/neverthrow";
 import { err, ok } from "@better-agent/shared/neverthrow";
 import { omitNullish } from "../../utils/object-utils";
-import type { OpenRouterChatCompletionResponse, OpenRouterChatCompletionsRequestSchema } from "../responses/schemas";
+import type {
+    OpenRouterChatCompletionChunk,
+    OpenRouterChatCompletionResponse,
+    OpenRouterChatCompletionsRequestSchema,
+} from "../responses/schemas";
 import type { OpenRouterImageCaps, OpenRouterImageEndpointOptions } from "./types";
 
 const toImageUrl = (source: GenerativeModelImageSource): string =>
     source.kind === "url" ? source.url : `data:${source.mimeType};base64,${source.data}`;
+
+const extractImageUrl = (image: unknown): string | undefined => {
+    if (typeof image === "string") {
+        return image;
+    }
+
+    if (!image || typeof image !== "object") {
+        return undefined;
+    }
+
+    const candidate = image as {
+        image_url?: string | { url?: string };
+        url?: string;
+    };
+
+    if (typeof candidate.image_url === "string") {
+        return candidate.image_url;
+    }
+
+    if (candidate.image_url && typeof candidate.image_url === "object") {
+        return candidate.image_url.url;
+    }
+
+    return candidate.url;
+};
+
+const mapOpenRouterUsage = (usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+}): GenerativeModelUsage =>
+    omitNullish({
+        inputTokens: usage?.prompt_tokens,
+        outputTokens: usage?.completion_tokens,
+        totalTokens: usage?.total_tokens,
+    });
 
 const parsePromptInput = (
     input: GenerativeModelCallOptions<OpenRouterImageCaps, OpenRouterImageEndpointOptions>["input"],
@@ -111,7 +154,9 @@ export function mapFromOpenRouterImageChatCompletion(
     raw: OpenRouterChatCompletionResponse,
 ): GenerativeModelResponse {
     const firstChoice = raw.choices[0];
-    const images = firstChoice?.message.images ?? [];
+    const images = (firstChoice?.message.images ?? [])
+        .map(extractImageUrl)
+        .filter((url): url is string => typeof url === "string" && url.length > 0);
 
     return {
         output: images.map((url) => ({
@@ -128,13 +173,85 @@ export function mapFromOpenRouterImageChatCompletion(
             ],
         })),
         finishReason: "stop",
-        usage: omitNullish({
-            inputTokens: raw.usage?.prompt_tokens,
-            outputTokens: raw.usage?.completion_tokens,
-            totalTokens: raw.usage?.total_tokens,
-        }),
+        usage: mapOpenRouterUsage(raw.usage ?? undefined),
         response: {
             body: raw,
         },
     };
+}
+
+export function mapFromOpenRouterImageChatCompletionChunk(
+    raw: OpenRouterChatCompletionChunk,
+    messageId: string,
+): Result<
+    | {
+          kind: "event";
+          event: Event;
+      }
+    | {
+          kind: "final";
+          response: GenerativeModelResponse;
+      }
+    | null,
+    BetterAgentError
+> {
+    try {
+        const firstChoice = raw.choices[0];
+        const deltaImages = (firstChoice?.delta?.images ?? [])
+            .map(extractImageUrl)
+            .filter((url): url is string => typeof url === "string" && url.length > 0);
+        const firstDeltaImage = deltaImages[0];
+
+        if (firstDeltaImage) {
+            return ok({
+                kind: "event",
+                event: {
+                    type: Events.IMAGE_MESSAGE_CONTENT,
+                    messageId,
+                    delta: {
+                        kind: "url",
+                        url: firstDeltaImage,
+                    },
+                    timestamp: Date.now(),
+                },
+            });
+        }
+
+        const finishReason = firstChoice?.finish_reason;
+        if (!finishReason) {
+            return ok(null);
+        }
+
+        const response = mapFromOpenRouterImageChatCompletion({
+            choices: [
+                {
+                    index: firstChoice?.index,
+                    finish_reason: finishReason,
+                    message: {
+                        role: "assistant",
+                        content: "",
+                        images: firstChoice?.delta?.images ?? [],
+                    },
+                },
+            ],
+        });
+
+        return ok({
+            kind: "final",
+            response: {
+                ...response,
+                response: {
+                    body: raw,
+                },
+            },
+        });
+    } catch (e) {
+        return err(
+            BetterAgentError.wrap({
+                err: e,
+                message: "Failed to map OpenRouter image stream chunk",
+                opts: { code: "INTERNAL", context: { provider: "openrouter" } },
+            }).at({ at: "openrouter.images.mapFromChunk" }),
+        );
+    }
 }

@@ -29,6 +29,14 @@ const OpenRouterContentPartFileSchema = z.object({
     }),
 });
 
+const OpenRouterContentPartInputAudioSchema = z.object({
+    type: z.literal("input_audio"),
+    inputAudio: z.object({
+        data: z.string(),
+        format: z.string(),
+    }),
+});
+
 const OpenRouterMessageContentSchema = z.union([
     z.string(),
     z.array(
@@ -36,6 +44,7 @@ const OpenRouterMessageContentSchema = z.union([
             OpenRouterContentPartTextSchema,
             OpenRouterContentPartImageSchema,
             OpenRouterContentPartFileSchema,
+            OpenRouterContentPartInputAudioSchema,
         ]),
     ),
 ]);
@@ -93,6 +102,16 @@ const OpenRouterResponseFormatSchema = z
     ])
     .optional();
 
+const OpenRouterAudioRequestSchema = z.object({
+    voice: z.string(),
+    format: z.string(),
+});
+
+const OpenRouterAudioResponseSchema = z.object({
+    data: z.string().optional(),
+    transcript: z.string().optional(),
+});
+
 const OpenRouterMessageSchema = z.object({
     role: z.string(),
     content: OpenRouterMessageContentSchema.nullish(),
@@ -109,14 +128,31 @@ const OpenRouterMessageSchema = z.object({
         )
         .optional(),
     tool_call_id: z.string().optional(),
-    images: z.array(z.string()).optional(),
+    images: z
+        .array(
+            z.union([
+                z.string(),
+                z.object({
+                    type: z.literal("image_url").optional(),
+                    image_url: z.union([
+                        z.string(),
+                        z.object({
+                            url: z.string(),
+                        }),
+                    ]),
+                }),
+            ]),
+        )
+        .optional(),
+    audio: OpenRouterAudioResponseSchema.optional(),
 });
 
 export const OpenRouterChatCompletionsRequestSchema = z
     .object({
         model: z.string(),
         messages: z.array(OpenRouterMessageSchema),
-        modalities: z.array(z.enum(["text", "image"])).optional(),
+        modalities: z.array(z.enum(["text", "image", "audio"])).optional(),
+        audio: OpenRouterAudioRequestSchema.optional(),
         tools: z.array(z.union([OpenRouterFunctionToolSchema, OpenRouterWebSearchToolSchema])).optional(),
         tool_choice: OpenRouterToolChoiceSchema.optional(),
         response_format: OpenRouterResponseFormatSchema,
@@ -175,7 +211,24 @@ export const OpenRouterChatCompletionChunkSchema = z
                     .object({
                         role: z.string().optional(),
                         content: z.string().optional(),
+                        images: z
+                            .array(
+                                z.union([
+                                    z.string(),
+                                    z.object({
+                                        type: z.literal("image_url").optional(),
+                                        image_url: z.union([
+                                            z.string(),
+                                            z.object({
+                                                url: z.string(),
+                                            }),
+                                        ]),
+                                    }),
+                                ]),
+                            )
+                            .optional(),
                         reasoning: z.string().optional(),
+                        audio: OpenRouterAudioResponseSchema.optional(),
                         tool_calls: z
                             .array(
                                 z.object({

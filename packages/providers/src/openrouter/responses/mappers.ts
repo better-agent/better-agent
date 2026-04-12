@@ -43,6 +43,7 @@ const OPENROUTER_RESPONSE_KNOWN_KEYS: ReadonlySet<string> = new Set([
     "route",
     "provider",
     "plugins",
+    "audio",
 ]);
 
 type OpenRouterInputItem = GenerativeModelInputItem<OpenRouterResponseCaps>;
@@ -53,6 +54,9 @@ type OpenRouterRequestContentPart = OpenRouterRequestContent[number];
 
 type OpenRouterStreamState = {
     text: string;
+    transcript: string;
+    audioChunks: string[];
+    audioFormat?: string;
     toolCalls: Array<{
         id: string;
         name: string;
@@ -61,7 +65,95 @@ type OpenRouterStreamState = {
     finishReason?: GenerativeModelFinishReason;
 };
 
+const extractOpenRouterImageUrl = (image: unknown): string | undefined => {
+    if (typeof image === "string") {
+        return image;
+    }
+
+    if (!image || typeof image !== "object") {
+        return undefined;
+    }
+
+    const candidate = image as {
+        image_url?: string | { url?: string };
+        url?: string;
+    };
+
+    if (typeof candidate.image_url === "string") {
+        return candidate.image_url;
+    }
+
+    if (candidate.image_url && typeof candidate.image_url === "object") {
+        return candidate.image_url.url;
+    }
+
+    return candidate.url;
+};
+
 const toDataUrl = (mimeType: string, data: string) => `data:${mimeType};base64,${data}`;
+
+const mimeTypeToAudioFormat = (mimeType: string): string => {
+    const normalized = mimeType.toLowerCase();
+    switch (normalized) {
+        case "audio/wav":
+        case "audio/x-wav":
+            return "wav";
+        case "audio/mpeg":
+        case "audio/mp3":
+            return "mp3";
+        case "audio/aiff":
+        case "audio/x-aiff":
+            return "aiff";
+        case "audio/aac":
+            return "aac";
+        case "audio/ogg":
+        case "audio/vorbis":
+            return "ogg";
+        case "audio/flac":
+        case "audio/x-flac":
+            return "flac";
+        case "audio/mp4":
+        case "audio/x-m4a":
+        case "audio/m4a":
+            return "m4a";
+        case "audio/pcm":
+        case "audio/l16":
+            return "pcm16";
+        case "audio/l24":
+            return "pcm24";
+        default:
+            throw BetterAgentError.fromCode(
+                "VALIDATION_FAILED",
+                `Unsupported OpenRouter audio mime type: ${mimeType}`,
+                { context: { provider: "openrouter", mimeType } },
+            ).at({ at: "openrouter.responses.map.audioMimeType" });
+    }
+};
+
+export const audioFormatToMimeType = (format: string): string => {
+    switch (format.toLowerCase()) {
+        case "wav":
+            return "audio/wav";
+        case "mp3":
+            return "audio/mpeg";
+        case "aiff":
+            return "audio/aiff";
+        case "aac":
+            return "audio/aac";
+        case "ogg":
+            return "audio/ogg";
+        case "flac":
+            return "audio/flac";
+        case "m4a":
+            return "audio/m4a";
+        case "pcm16":
+            return "audio/pcm";
+        case "pcm24":
+            return "audio/l24";
+        default:
+            return "audio/wav";
+    }
+};
 
 const mapUsage = (usage?: {
     prompt_tokens?: number;
@@ -131,6 +223,24 @@ const mapMessagePart = (
         };
     }
 
+    if (part.type === "audio") {
+        if (part.source.kind === "url") {
+            throw BetterAgentError.fromCode(
+                "VALIDATION_FAILED",
+                "OpenRouter audio inputs require base64-encoded content, not remote URLs",
+                { context: { provider: "openrouter", model: modelId } },
+            ).at({ at: "openrouter.responses.map.audioUrl" });
+        }
+
+        return {
+            type: "input_audio",
+            inputAudio: {
+                data: part.source.data,
+                format: mimeTypeToAudioFormat(part.source.mimeType),
+            },
+        };
+    }
+
     throw BetterAgentError.fromCode(
         "VALIDATION_FAILED",
         `Unsupported OpenRouter message part for role=${role}: ${part.type}`,
@@ -171,20 +281,14 @@ const mapInputToMessages = (
                     .map((part) => part.text)
                     .join("\n");
 
-                messages.push({
-                    role,
-                    content: textContent,
-                });
+                messages.push({ role, content: textContent });
                 continue;
             }
 
             const contentParts: OpenRouterRequestContentPart[] = item.content.map((part) =>
                 mapMessagePart(modelId, part, role),
             );
-            messages.push({
-                role,
-                content: contentParts,
-            });
+            messages.push({ role, content: contentParts });
             continue;
         }
 
@@ -251,6 +355,7 @@ export function mapToOpenRouterChatCompletionsRequest<
                 route: o.route,
                 provider: o.provider,
                 plugins: o.plugins,
+                audio: o.audio,
             }),
         };
 
@@ -362,6 +467,18 @@ const buildOutputMessages = (
                   url: string;
               };
           }
+        | {
+              type: "audio";
+              source: {
+                  kind: "base64";
+                  data: string;
+                  mimeType: string;
+              };
+          }
+        | {
+              type: "transcript";
+              text: string;
+          }
     > = [];
 
     if (typeof message.content === "string" && message.content.length > 0) {
@@ -374,13 +491,32 @@ const buildOutputMessages = (
         }
     }
 
-    for (const imageUrl of message.images ?? []) {
+    for (const imageUrl of (message.images ?? []).map(extractOpenRouterImageUrl)) {
+        if (!imageUrl) continue;
         contentParts.push({
             type: "image",
             source: {
                 kind: "url",
                 url: imageUrl,
             },
+        });
+    }
+
+    if (typeof message.audio?.data === "string" && message.audio.data.length > 0) {
+        contentParts.push({
+            type: "audio",
+            source: {
+                kind: "base64",
+                data: message.audio.data,
+                mimeType: "audio/wav",
+            },
+        });
+    }
+
+    if (typeof message.audio?.transcript === "string" && message.audio.transcript.length > 0) {
+        contentParts.push({
+            type: "transcript",
+            text: message.audio.transcript,
         });
     }
 
@@ -423,6 +559,8 @@ export function mapFromOpenRouterChatCompletion(
 export function createOpenRouterStreamState(): OpenRouterStreamState {
     return {
         text: "",
+        transcript: "",
+        audioChunks: [],
         toolCalls: [],
     };
 }
@@ -433,6 +571,14 @@ export function mapFromOpenRouterChatCompletionChunk(
 ): Result<
     | {
           kind: "text-delta";
+          delta: string;
+      }
+    | {
+          kind: "audio-delta";
+          data: string;
+      }
+    | {
+          kind: "transcript-delta";
           delta: string;
       }
     | {
@@ -476,14 +622,54 @@ export function mapFromOpenRouterChatCompletionChunk(
         });
     }
 
+    if (typeof choice.delta?.audio?.data === "string" && choice.delta.audio.data.length > 0) {
+        state.audioChunks.push(choice.delta.audio.data);
+        return ok({
+            kind: "audio-delta",
+            data: choice.delta.audio.data,
+        });
+    }
+
+    if (
+        typeof choice.delta?.audio?.transcript === "string" &&
+        choice.delta.audio.transcript.length > 0
+    ) {
+        state.transcript += choice.delta.audio.transcript;
+        return ok({
+            kind: "transcript-delta",
+            delta: choice.delta.audio.transcript,
+        });
+    }
+
     if (choice.finish_reason) {
         state.finishReason = mapFinishReason(choice.finish_reason);
         const output: GenerativeModelOutputItem<OpenRouterResponseCaps>[] = [];
-        if (state.text.length > 0) {
+        if (
+            state.text.length > 0 ||
+            state.audioChunks.length > 0 ||
+            state.transcript.length > 0
+        ) {
             output.push({
                 type: "message",
                 role: "assistant",
-                content: state.text,
+                content: [
+                    ...(state.text.length > 0 ? [{ type: "text" as const, text: state.text }] : []),
+                    ...(state.audioChunks.length > 0
+                        ? [
+                              {
+                                  type: "audio" as const,
+                                  source: {
+                                      kind: "base64" as const,
+                                      data: state.audioChunks.join(""),
+                                      mimeType: audioFormatToMimeType(state.audioFormat ?? "wav"),
+                                  },
+                              },
+                          ]
+                        : []),
+                    ...(state.transcript.length > 0
+                        ? [{ type: "transcript" as const, text: state.transcript }]
+                        : []),
+                ],
             });
         }
         for (const toolCall of state.toolCalls) {
