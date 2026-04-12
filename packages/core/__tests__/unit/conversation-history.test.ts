@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createMemoryConversationStore } from "../../src/persistence";
 import { loadConversationMessages } from "../../src/run/helpers";
 import { createRuntime } from "../../src/run/runtime";
-import { createTextAgent } from "../helpers/mock-model";
+import { createScriptedModel, createTextAgent } from "../helpers/mock-model";
 
 describe("conversation history helpers", () => {
     test("loadConversationMessages skips prepending stored history when replaceHistory is true", async () => {
@@ -147,6 +147,71 @@ describe("conversation history helpers", () => {
             { type: "message", role: "system", content: "prepared" },
             { type: "message", role: "user", content: "fresh" },
         ]);
+    });
+
+    test("loadConversationMessages keeps only the latest turn for single_turn_only", async () => {
+        const conversations = createMemoryConversationStore();
+        await conversations.save({
+            conversationId: "conv_1",
+            agentName: "assistant",
+            items: [{ type: "message", role: "user", content: "stored" }],
+        });
+
+        const loaded = await loadConversationMessages({
+            conversations,
+            conversationId: "conv_1",
+            agentName: "assistant",
+            input: [{ type: "message", role: "user", content: "fresh" }],
+            caps: {
+                inputShape: "chat",
+                replayMode: "single_turn_only",
+                inputModalities: { text: true },
+                outputModalities: { text: true },
+            },
+        });
+
+        expect(loaded.input).toEqual([{ type: "message", role: "user", content: "fresh" }]);
+        expect(loaded.items).toEqual([{ type: "message", role: "user", content: "fresh" }]);
+        expect(loaded.replayStartIndex).toBe(0);
+        expect(loaded.conversationReplayActive).toBe(false);
+    });
+
+    test("runtime single_turn_only overwrites stored history with the latest turn", async () => {
+        const conversations = createMemoryConversationStore();
+        const agent = createTextAgent({
+            model: createScriptedModel([{ output: [], finishReason: "stop", usage: {} }]),
+        });
+        agent.model.caps.replayMode = "single_turn_only";
+
+        const runtime = createRuntime({
+            agents: [agent] as const,
+            conversations,
+        });
+
+        await runtime.run("assistant", {
+            input: "first" as never,
+            conversationId: "conv_1",
+        });
+
+        expect(
+            await conversations.load({ conversationId: "conv_1", agentName: "assistant" }),
+        ).toMatchObject({
+            items: [{ type: "message", role: "user", content: "first" }],
+        });
+
+        await runtime.run("assistant", {
+            input: "second" as never,
+            conversationId: "conv_1",
+        });
+
+        expect(
+            await conversations.load({ conversationId: "conv_1", agentName: "assistant" }),
+        ).toMatchObject({
+            items: [
+                { type: "message", role: "user", content: "second" },
+                { type: "message", role: "assistant", content: "done" },
+            ],
+        });
     });
 
     test("createMemoryConversationStore enforces cursor checks", async () => {

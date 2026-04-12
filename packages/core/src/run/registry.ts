@@ -16,16 +16,14 @@ export function createAgentRegistry(
 
 export function resolveAgentFromRegistry(
     agents: ReadonlyMap<string, AnyAgentDefinition>,
-    agent: string | AnyAgentDefinition,
+    agentName: string,
     traceAt: string,
 ): AnyAgentDefinition {
-    const resolved =
-        typeof agent === "string" ? agents.get(agent) : (agents.get(agent.name) ?? agent);
+    const resolved = agents.get(agentName);
     if (resolved) {
         return resolved;
     }
 
-    const agentName = typeof agent === "string" ? agent : agent.name;
     throw BetterAgentError.fromCode("NOT_FOUND", `Agent '${agentName}' does not exist.`, {
         context: { agentName },
         trace: [{ at: traceAt }],
