@@ -410,6 +410,7 @@ export function createRuntime<const TAgents extends readonly AnyAgentDefinition[
                 agent,
                 "core.run.createRuntime.run",
             ) as ContextBoundAgent<TContext>;
+
             if (
                 runOptions.conversationId !== undefined &&
                 runOptions.conversationId.trim().length === 0
@@ -450,9 +451,7 @@ export function createRuntime<const TAgents extends readonly AnyAgentDefinition[
                     resolvedAgent,
                     runOptions.context,
                 );
-                const runPersistence = runOptions.persistence;
-                const resolvedConversations =
-                    runPersistence?.conversations ?? options.conversations;
+                const resolvedConversations = resolvedPersistence?.conversations;
                 const conversationInput = await loadConversationMessages({
                     input: runOptions.input,
                     caps: resolvedAgent.model.caps,
@@ -544,6 +543,7 @@ export function createRuntime<const TAgents extends readonly AnyAgentDefinition[
                 agent,
                 "core.run.createRuntime.stream",
             ) as ContextBoundAgent<TContext>;
+
             if (
                 runOptions.conversationId !== undefined &&
                 runOptions.conversationId.trim().length === 0
@@ -560,7 +560,12 @@ export function createRuntime<const TAgents extends readonly AnyAgentDefinition[
 
             const queue = createAsyncEventQueue<Event>();
             const runPersistence = runOptions.persistence;
-            const streamStore = runPersistence?.stream ?? options.stream;
+            const resolvedPersistence = buildPersistence(runPersistence, {
+                stream: options.stream,
+                conversations: options.conversations,
+                runtimeState: options.runtimeState,
+            });
+            const streamStore = resolvedPersistence?.stream;
             const execution = createRuntimeExecutionContext({
                 resolvedAgent,
                 conversationId: runOptions.conversationId,
@@ -570,12 +575,6 @@ export function createRuntime<const TAgents extends readonly AnyAgentDefinition[
                 queueSignal: streamLifecycle === "detached" ? runOptions.signal : undefined,
                 streamStore,
                 queue,
-            });
-
-            const resolvedPersistence = buildPersistence(runPersistence, {
-                stream: streamStore,
-                conversations: options.conversations,
-                runtimeState: options.runtimeState,
             });
 
             const result = (async (): Promise<RunResult> => {
@@ -592,8 +591,7 @@ export function createRuntime<const TAgents extends readonly AnyAgentDefinition[
                         resolvedAgent,
                         runOptions.context,
                     );
-                    const resolvedConversations =
-                        runPersistence?.conversations ?? options.conversations;
+                    const resolvedConversations = resolvedPersistence?.conversations;
                     const conversationInput = await loadConversationMessages({
                         input: runOptions.input,
                         caps: resolvedAgent.model.caps,

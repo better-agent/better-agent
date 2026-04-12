@@ -33,15 +33,14 @@ import type { OnOutputError, OutputErrorContext, OutputErrorMode } from "./outpu
 import type { ContextBoundAgent, ConversationReplayOptions, RunOptions, RunResult } from "./types";
 
 const MAX_OUTPUT_REPAIR_DEPTH = 2;
-type NonTextInputModality = Exclude<Modality, "text">;
-
-const isJsonSchemaRecord = (value: unknown): value is Record<string, unknown> =>
-    typeof value === "object" && value !== null && !Array.isArray(value);
 
 const normalizeStructuredOutputJsonSchema = (
     schema: Record<string, unknown>,
 ): Record<string, unknown> => {
     const normalized: Record<string, unknown> = {};
+
+    const isJsonSchemaRecord = (value: unknown): value is Record<string, unknown> =>
+        typeof value === "object" && value !== null && !Array.isArray(value);
 
     for (const [key, value] of Object.entries(schema)) {
         if (Array.isArray(value)) {
@@ -86,14 +85,8 @@ export function createStreamPersistenceEmitter(params: {
             seq: nextSeq++,
             timestamp: event.timestamp ?? Date.now(),
         };
-        try {
-            await stream.append(params.streamId, streamEvent);
-        } catch (error) {
-            if (error instanceof Error && error.message.includes("not found")) {
-                return;
-            }
-            throw error;
-        }
+
+        await stream.append(params.streamId, streamEvent);
     };
 }
 
@@ -302,7 +295,7 @@ const validateMessageContentCapabilities = (params: {
             partType === "file" ||
             partType === "embedding"
         ) {
-            const modality = partType as NonTextInputModality;
+            const modality = partType as Exclude<Modality, "text">;
             if (caps.inputModalities?.[modality] !== true) {
                 throwUnsupportedInputModality({
                     agent: params.agent,
@@ -879,7 +872,17 @@ export async function loadConversationMessages(params: {
     const replayMode =
         caps.replayMode ?? (caps.inputShape === "prompt" ? "single_turn_persistent" : "multi_turn");
 
-    if (replayMode !== "multi_turn") {
+    if (replayMode === "single_turn_only") {
+        return {
+            input: params.input,
+            items: durableInputItems,
+            replayStartIndex: 0,
+            conversationReplayActive: false,
+            loaded,
+        };
+    }
+
+    if (replayMode === "single_turn_persistent") {
         return {
             input: params.input,
             items: [...loaded.items, ...durableInputItems],
@@ -942,19 +945,21 @@ export async function saveConversationMessages(params: {
                 : {}),
         });
     } catch (error) {
+        const code =
+            typeof (error as { code?: unknown })?.code === "string"
+                ? ((error as { code: string }).code as BetterAgentError["code"])
+                : undefined;
+        const status =
+            typeof (error as { status?: unknown })?.status === "number"
+                ? (error as { status: number }).status
+                : undefined;
+
         throw BetterAgentError.wrap({
             err: error,
             message: "Failed to save conversation messages.",
             opts: {
-                code:
-                    error instanceof BetterAgentError && error.code !== undefined
-                        ? error.code
-                        : typeof (error as { code?: unknown })?.code === "string"
-                          ? ((error as { code: string }).code as BetterAgentError["code"])
-                          : "INTERNAL",
-                ...(typeof (error as { status?: unknown })?.status === "number"
-                    ? { status: (error as { status: number }).status }
-                    : {}),
+                ...(code !== undefined ? { code } : {}),
+                ...(status !== undefined ? { status } : {}),
                 context: {
                     conversationId: params.conversationId,
                     agentName: params.agentName,
