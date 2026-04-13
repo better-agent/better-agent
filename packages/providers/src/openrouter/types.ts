@@ -5,6 +5,8 @@ import type {
     GenerativeModelCallOptions,
     ModalitiesParam,
 } from "@better-agent/core/providers";
+import type { OpenRouterAudioCaps, OpenRouterAudioEndpointOptions } from "./audio/types";
+import type { OpenRouterFileCaps, OpenRouterFileEndpointOptions } from "./files/types";
 import type { OpenRouterImageCaps, OpenRouterImageEndpointOptions } from "./images/types";
 import type {
     OpenRouterResponseCaps,
@@ -16,20 +18,39 @@ type SuggestedModelId<TKnown extends string> = TKnown | (string & {});
 
 export type OpenRouterResponseModelId = SuggestedModelId<never>;
 export type OpenRouterImageModelId = SuggestedModelId<never>;
-export type OpenRouterModelId = OpenRouterResponseModelId | OpenRouterImageModelId;
+export type OpenRouterFileModelId = SuggestedModelId<never>;
+export type OpenRouterAudioModelId = SuggestedModelId<never>;
+export type OpenRouterModelId =
+    | OpenRouterResponseModelId
+    | OpenRouterImageModelId
+    | OpenRouterFileModelId
+    | OpenRouterAudioModelId;
+export type OpenRouterRouteHint = "responses" | "images" | "files" | "audio";
 
 export type OpenRouterCapsFor<M extends OpenRouterModelId> = M extends OpenRouterImageModelId
     ? OpenRouterImageCaps
-    : OpenRouterResponseCaps;
+    : M extends OpenRouterFileModelId
+      ? OpenRouterFileCaps
+      : M extends OpenRouterAudioModelId
+        ? OpenRouterAudioCaps
+        : OpenRouterResponseCaps;
 
 export type OpenRouterOptionsFor<M extends OpenRouterModelId> = M extends OpenRouterImageModelId
     ? OpenRouterImageEndpointOptions
-    : OpenRouterResponseEndpointOptions;
+    : M extends OpenRouterFileModelId
+      ? OpenRouterFileEndpointOptions
+      : M extends OpenRouterAudioModelId
+        ? OpenRouterAudioEndpointOptions
+        : OpenRouterResponseEndpointOptions;
 
 export type OpenRouterGenerativeModel<M extends OpenRouterModelId = OpenRouterModelId> =
     M extends OpenRouterImageModelId
         ? OpenRouterImageGenerativeModel<M>
-        : OpenRouterResponseGenerativeModel<M>;
+        : M extends OpenRouterFileModelId
+          ? OpenRouterFileGenerativeModel<M>
+          : M extends OpenRouterAudioModelId
+            ? OpenRouterAudioGenerativeModel<M>
+            : OpenRouterResponseGenerativeModel<M>;
 
 export type OpenRouterResponseGenerativeModel<
     M extends OpenRouterResponseModelId = OpenRouterResponseModelId,
@@ -39,11 +60,21 @@ export type OpenRouterImageGenerativeModel<
     M extends OpenRouterImageModelId = OpenRouterImageModelId,
 > = GenerativeModel<OpenRouterImageEndpointOptions, "openrouter", M, OpenRouterImageCaps>;
 
+export type OpenRouterFileGenerativeModel<
+    M extends OpenRouterFileModelId = OpenRouterFileModelId,
+> = GenerativeModel<OpenRouterFileEndpointOptions, "openrouter", M, OpenRouterFileCaps>;
+
+export type OpenRouterAudioGenerativeModel<
+    M extends OpenRouterAudioModelId = OpenRouterAudioModelId,
+> = GenerativeModel<OpenRouterAudioEndpointOptions, "openrouter", M, OpenRouterAudioCaps>;
+
 export interface OpenRouterProvider {
     readonly id: "openrouter";
     readonly tools: OpenRouterNativeToolBuilders;
     model<M extends OpenRouterModelId>(modelId: M): OpenRouterGenerativeModel<M>;
     text<M extends OpenRouterResponseModelId>(modelId: M): OpenRouterResponseGenerativeModel<M>;
+    file<M extends OpenRouterFileModelId>(modelId: M): OpenRouterFileGenerativeModel<M>;
+    audio<M extends OpenRouterAudioModelId>(modelId: M): OpenRouterAudioGenerativeModel<M>;
     image<M extends OpenRouterImageModelId>(modelId: M): OpenRouterImageGenerativeModel<M>;
 }
 

@@ -34,13 +34,13 @@ const openrouterSearch = defineAgent({
 
 const openrouterFile = defineAgent({
     name: "openrouter-file",
-    model: openrouterProvider.text("openai/gpt-5.4-mini"),
+    model: openrouterProvider.file("openai/gpt-5.4-mini"),
     instruction: `${conciseInstruction} Read uploaded files when present and answer from their contents.`,
 });
 
 const openrouterAudio = defineAgent({
     name: "openrouter-audio",
-    model: openrouterProvider.text("openai/gpt-4o-audio-preview"),
+    model: openrouterProvider.audio("openai/gpt-4o-audio-preview"),
     instruction: `${conciseInstruction} When audio is provided, transcribe it, summarize it when useful, and respond clearly.`,
     defaultModalities: ["text", "audio"] as const,
 });
@@ -59,17 +59,6 @@ const app = betterAgent({
         openrouterAudio,
         openrouterImage,
     ],
-    plugins: [
-        rateLimitPlugin({
-            windowMs: 60_000,
-            max: 30,
-        }),
-        sandboxPlugin({
-            client: createE2BSandboxClient({
-                apiKey: process.env.E2B_API_KEY,
-            }),
-        }),
-    ],
     persistence: {
         stream: createMemoryStreamStore(),
         conversations: createMemoryConversationStore(),
@@ -79,7 +68,6 @@ const app = betterAgent({
         onRequestDisconnect: "continue",
     },
     baseURL: "/agents",
-    secret: process.env.BETTER_AGENT_SECRET ?? "your-secret-here",
 });
 
 export default app;

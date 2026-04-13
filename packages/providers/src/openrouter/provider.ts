@@ -1,11 +1,10 @@
 import { createOpenRouterClient as createOpenRouterHttpClient } from "./client";
-import { createOpenRouterImagesModel } from "./images/model";
-import { createOpenRouterResponsesModel } from "./responses/model";
+import { createOpenRouterGenerativeModel } from "./models";
 import { createOpenRouterNativeToolBuilders } from "./tools";
 import type {
+    OpenRouterAudioModelId,
     OpenRouterConfig,
-    OpenRouterGenerativeModel,
-    OpenRouterResponseGenerativeModel,
+    OpenRouterFileModelId,
     OpenRouterImageModelId,
     OpenRouterModelId,
     OpenRouterProvider,
@@ -21,18 +20,23 @@ export const createOpenRouter = (config: OpenRouterConfig): OpenRouterProvider =
         tools,
 
         model<M extends OpenRouterModelId>(modelId: M) {
-            return createOpenRouterResponsesModel(
-                modelId as OpenRouterResponseModelId,
-                httpClient,
-            ) as unknown as OpenRouterGenerativeModel<M>;
+            return createOpenRouterGenerativeModel(modelId, httpClient);
         },
 
         text<M extends OpenRouterResponseModelId>(modelId: M) {
-            return createOpenRouterResponsesModel(modelId, httpClient);
+            return createOpenRouterGenerativeModel(modelId, httpClient, "responses");
+        },
+
+        file<M extends OpenRouterFileModelId>(modelId: M) {
+            return createOpenRouterGenerativeModel(modelId, httpClient, "files");
+        },
+
+        audio<M extends OpenRouterAudioModelId>(modelId: M) {
+            return createOpenRouterGenerativeModel(modelId, httpClient, "audio");
         },
 
         image<M extends OpenRouterImageModelId>(modelId: M) {
-            return createOpenRouterImagesModel(modelId, httpClient);
+            return createOpenRouterGenerativeModel(modelId, httpClient, "images");
         },
     };
 
