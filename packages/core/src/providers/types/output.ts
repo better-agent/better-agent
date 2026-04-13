@@ -40,7 +40,6 @@ export type GenerativeModelOutputMessage<TModelCaps extends Capabilities = Capab
     type: "message";
     role: GenerativeModelMessageRole<TModelCaps>;
     content: GenerativeModelOutputMessageContent<TModelCaps>;
-    providerMetadata?: Record<string, unknown>;
 };
 
 /**

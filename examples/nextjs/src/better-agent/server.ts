@@ -6,7 +6,6 @@ import {
     defineAgent,
 } from "@better-agent/core";
 
-import { createE2BSandboxClient, rateLimitPlugin, sandboxPlugin } from "@better-agent/plugins";
 import { createOpenRouter } from "@better-agent/providers/openrouter";
 
 const openrouterProvider = createOpenRouter({

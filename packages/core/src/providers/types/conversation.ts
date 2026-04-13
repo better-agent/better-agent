@@ -44,7 +44,6 @@ export interface ConversationMessage {
     type: "message";
     role: GenerativeModelMessageRole<Capabilities>;
     content: ConversationMessageContent;
-    providerMetadata?: Record<string, unknown>;
 }
 
 /**

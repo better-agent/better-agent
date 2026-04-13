@@ -51,9 +51,6 @@ export const normalizeInputToConversationItems = (
                   type: "message",
                   role: "role" in item ? item.role : "user",
                   content: item.content,
-                  ...("providerMetadata" in item && item.providerMetadata !== undefined
-                      ? { providerMetadata: item.providerMetadata }
-                      : {}),
               } satisfies ConversationMessage)
             : item,
     );
@@ -98,17 +95,11 @@ export const projectConversationItemsToInput = (
                         ? ({
                               type: "message",
                               content: projectedContent,
-                              ...(item.providerMetadata !== undefined
-                                  ? { providerMetadata: item.providerMetadata }
-                                  : {}),
                           } as GenerativeModelInputItem)
                         : ({
                               type: "message",
                               role: item.role,
                               content: projectedContent,
-                              ...(item.providerMetadata !== undefined
-                                  ? { providerMetadata: item.providerMetadata }
-                                  : {}),
                           } as GenerativeModelInputItem),
                 ];
             }
