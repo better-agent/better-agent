@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { TOOL_JSON_SCHEMA } from "@better-agent/core";
+import { createOpenRouter } from "../../src/openrouter";
 import {
     createOpenRouterStreamState,
     mapFromOpenRouterChatCompletion,
@@ -94,6 +95,80 @@ describe("openrouter text request mapping", () => {
         });
         expect(mapped.value.temperature).toBe(0.2);
         expect(mapped.value.max_tokens).toBe(128);
+    });
+
+    test("maps OpenRouter hosted web search tool using server tool parameters", () => {
+        const openrouter = createOpenRouter({});
+        const mapped = mapToOpenRouterChatCompletionsRequest({
+            modelId: "openai/gpt-5.4-mini",
+            options: {
+                input: "What were the major AI announcements this week?",
+                tools: [
+                    openrouter.tools.webSearch({
+                        engine: "exa",
+                        max_results: 5,
+                        max_total_results: 20,
+                        search_context_size: "medium",
+                        allowed_domains: ["openai.com"],
+                        excluded_domains: ["reddit.com"],
+                        user_location: {
+                            type: "approximate",
+                            city: "San Francisco",
+                            region: "California",
+                            country: "US",
+                            timezone: "America/Los_Angeles",
+                        },
+                    }),
+                ],
+            },
+        });
+        if (mapped.isErr()) throw mapped.error;
+
+        expect(mapped.value.tools).toEqual([
+            {
+                type: "openrouter:web_search",
+                parameters: {
+                    engine: "exa",
+                    max_results: 5,
+                    max_total_results: 20,
+                    search_context_size: "medium",
+                    allowed_domains: ["openai.com"],
+                    excluded_domains: ["reddit.com"],
+                    user_location: {
+                        type: "approximate",
+                        city: "San Francisco",
+                        region: "California",
+                        country: "US",
+                        timezone: "America/Los_Angeles",
+                    },
+                },
+            },
+        ]);
+    });
+
+    test("maps OpenRouter hosted datetime tool using server tool parameters", () => {
+        const openrouter = createOpenRouter({});
+        const mapped = mapToOpenRouterChatCompletionsRequest({
+            modelId: "openai/gpt-5.4-mini",
+            options: {
+                input: "What time is it in Tokyo right now?",
+                tools: [
+                    openrouter.tools.datetime({
+                        timezone: "Asia/Tokyo",
+                    }),
+                ],
+            },
+        });
+        if (mapped.isErr()) throw mapped.error;
+
+        expect(mapped.value.tools).toEqual([
+            {
+                type: "openrouter:datetime",
+                parameters: {
+                    timezone: "Asia/Tokyo",
+                },
+            },
+        ]);
     });
 
     test("maps response text, images, and tool calls", () => {

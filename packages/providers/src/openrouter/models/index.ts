@@ -1,13 +1,10 @@
 import type { createOpenRouterClient } from "../client/create-client";
 import { createOpenRouterAudioModel } from "../audio/model";
-import { createOpenRouterFileModel } from "../files/model";
 import { createOpenRouterImagesModel } from "../images/model";
 import { createOpenRouterResponsesModel } from "../responses/model";
 import type {
     OpenRouterAudioGenerativeModel,
     OpenRouterAudioModelId,
-    OpenRouterFileGenerativeModel,
-    OpenRouterFileModelId,
     OpenRouterGenerativeModel,
     OpenRouterImageGenerativeModel,
     OpenRouterImageModelId,
@@ -27,11 +24,6 @@ export function createOpenRouterGenerativeModel<M extends OpenRouterImageModelId
     client: ReturnType<typeof createOpenRouterClient>,
     routeHint: "images",
 ): OpenRouterImageGenerativeModel<M>;
-export function createOpenRouterGenerativeModel<M extends OpenRouterFileModelId>(
-    modelId: M,
-    client: ReturnType<typeof createOpenRouterClient>,
-    routeHint: "files",
-): OpenRouterFileGenerativeModel<M>;
 export function createOpenRouterGenerativeModel<M extends OpenRouterAudioModelId>(
     modelId: M,
     client: ReturnType<typeof createOpenRouterClient>,
@@ -52,10 +44,6 @@ export function createOpenRouterGenerativeModel(
 
     if (routeHint === "images") {
         return createOpenRouterImagesModel(modelId as OpenRouterImageModelId, client);
-    }
-
-    if (routeHint === "files") {
-        return createOpenRouterFileModel(modelId as OpenRouterResponseModelId, client);
     }
 
     if (routeHint === "audio") {

@@ -24,13 +24,13 @@ const AGENTS = [
         description: "OpenRouter hosted web search.",
     },
     {
-        id: "openrouter-file",
-        label: "OpenRouter File",
+        id: "openrouter-datetime",
+        label: "OpenRouter Datetime",
         provider: "OpenRouter",
-        path: "/agents/openrouter-file",
-        capability: "file",
+        path: "/agents/openrouter-datetime",
+        capability: "datetime",
         delivery: "stream",
-        description: "Read uploaded files inside a text chat turn.",
+        description: "OpenRouter hosted date and time lookup.",
     },
     {
         id: "openrouter-audio",
@@ -39,7 +39,7 @@ const AGENTS = [
         path: "/agents/openrouter-audio",
         capability: "audio",
         delivery: "stream",
-        description: "Upload audio for transcription and spoken output.",
+        description: "Chat with text or upload audio for transcription and spoken output.",
     },
     {
         id: "openrouter-image",
@@ -64,6 +64,115 @@ type AudioPart = Extract<MessagePart, { type: "audio" }>;
 type TranscriptPart = Extract<MessagePart, { type: "transcript" }>;
 type ToolCallPart = Extract<MessagePart, { type: "tool-call" }>;
 type ToolResultPart = Extract<MessagePart, { type: "tool-result" }>;
+
+const dataUrlToBase64Source = (dataUrl: string) => {
+    const match = /^data:(.+?);base64,(.+)$/.exec(dataUrl);
+    if (!match) {
+        throw new Error("Unsupported data URL format.");
+    }
+
+    return {
+        kind: "base64" as const,
+        mimeType: match[1],
+        data: match[2],
+    };
+};
+
+const buildDemoInput = (args: {
+    capability: Capability;
+    prompt: string;
+    imageUrl?: string;
+    imageDataUrl?: string | null;
+    audioDataUrl?: string | null;
+}) => {
+    const promptPart = { type: "text" as const, text: args.prompt };
+    const imageParts: Array<
+        | { type: "image"; source: { kind: "url"; url: string } }
+        | {
+              type: "image";
+              source: { kind: "base64"; data: string; mimeType: string };
+          }
+    > = [];
+    const audioParts: Array<{
+        type: "audio";
+        source: {
+            kind: "base64";
+            data: string;
+            mimeType: string;
+        };
+    }> = [];
+
+    if (args.imageDataUrl) {
+        imageParts.push({
+            type: "image",
+            source: dataUrlToBase64Source(args.imageDataUrl),
+        });
+    } else if (args.imageUrl) {
+        imageParts.push({
+            type: "image",
+            source: { kind: "url", url: args.imageUrl },
+        });
+    }
+
+    if (args.audioDataUrl) {
+        audioParts.push({
+            type: "audio",
+            source: dataUrlToBase64Source(args.audioDataUrl),
+        });
+    }
+
+    switch (args.capability) {
+        case "text":
+        case "search":
+        case "datetime":
+            return {
+                ok: true as const,
+                value: {
+                    input: [
+                        {
+                            type: "message" as const,
+                            role: "user" as const,
+                            content: [promptPart, ...imageParts],
+                        },
+                    ],
+                },
+            };
+        case "image":
+            return {
+                ok: true as const,
+                value: {
+                    input: [
+                        {
+                            type: "message" as const,
+                            role: "user" as const,
+                            content: [promptPart, ...imageParts],
+                        },
+                    ],
+                    modalities: ["image"] as const,
+                },
+            };
+        case "audio":
+            return {
+                ok: true as const,
+                value: {
+                    input: [
+                        {
+                            type: "message" as const,
+                            role: "user" as const,
+                            content: [promptPart, ...audioParts],
+                        },
+                    ],
+                    modalities: ["text", "audio"] as const,
+                    modelOptions: {
+                        audio: {
+                            voice: "alloy",
+                            format: "wav",
+                        },
+                    },
+                },
+            };
+    }
+};
 
 const sourceToUrl = (
     source: ImagePart["source"] | FilePart["source"] | AudioPart["source"],
@@ -104,21 +213,7 @@ const readFileAsDataUrl = (file: File) =>
         reader.readAsDataURL(file);
     });
 
-const dataUrlToBase64Source = (dataUrl: string) => {
-    const match = /^data:(.+?);base64,(.+)$/.exec(dataUrl);
-    if (!match) {
-        throw new Error("Unsupported data URL format.");
-    }
-
-    return {
-        kind: "base64" as const,
-        mimeType: match[1],
-        data: match[2],
-    };
-};
-
 const isImageCapability = (capability: Capability) => capability === "image";
-const isFileCapability = (capability: Capability) => capability === "file";
 const isAudioCapability = (capability: Capability) => capability === "audio";
 
 const capabilityNeedsPrompt = (_capability: Capability) => true;
@@ -129,8 +224,6 @@ const capabilitySupportsReferenceImage = (capability: Capability) =>
 const capabilitySupportsImageUpload = (capability: Capability) =>
     capability === "text" || capability === "search" || capability === "image";
 
-const capabilitySupportsFileUpload = (capability: Capability) => capability === "file";
-
 const capabilitySupportsAudioUpload = (capability: Capability) => capability === "audio";
 
 export default function Page() {
@@ -138,7 +231,6 @@ export default function Page() {
     const [input, setInput] = useState("");
     const [referenceImageUrl, setReferenceImageUrl] = useState("");
     const [referenceImageFile, setReferenceImageFile] = useState<File | null>(null);
-    const [uploadedFile, setUploadedFile] = useState<File | null>(null);
     const [uploadedAudio, setUploadedAudio] = useState<File | null>(null);
     const [clientError, setClientError] = useState<string | null>(null);
 
@@ -432,15 +524,11 @@ export default function Page() {
                             }
 
                             let imageDataUrl: string | null = null;
-                            let fileDataUrl: string | null = null;
                             let audioDataUrl: string | null = null;
 
                             try {
                                 if (referenceImageFile) {
                                     imageDataUrl = await readFileAsDataUrl(referenceImageFile);
-                                }
-                                if (uploadedFile) {
-                                    fileDataUrl = await readFileAsDataUrl(uploadedFile);
                                 }
                                 if (uploadedAudio) {
                                     audioDataUrl = await readFileAsDataUrl(uploadedAudio);
@@ -454,152 +542,25 @@ export default function Page() {
                                 return;
                             }
 
-                            const imageParts: Array<
-                                | { type: "image"; source: { kind: "url"; url: string } }
-                                | {
-                                      type: "image";
-                                      source: {
-                                          kind: "base64";
-                                          data: string;
-                                          mimeType: string;
-                                      };
-                                  }
-                            > = [];
+                            const nextInput = buildDemoInput({
+                                capability: activeAgent.capability,
+                                prompt,
+                                imageUrl,
+                                imageDataUrl,
+                                audioDataUrl,
+                            });
 
-                            if (imageDataUrl) {
-                                imageParts.push({
-                                    type: "image",
-                                    source: dataUrlToBase64Source(imageDataUrl),
-                                });
-                            } else if (imageUrl) {
-                                imageParts.push({
-                                    type: "image",
-                                    source: { kind: "url", url: imageUrl },
-                                });
+                            if (!nextInput.ok) {
+                                setClientError(nextInput.error);
+                                return;
                             }
 
-                            const fileParts: Array<{
-                                type: "file";
-                                source: {
-                                    kind: "base64";
-                                    data: string;
-                                    mimeType: string;
-                                    filename?: string;
-                                };
-                            }> = [];
-
-                            if (fileDataUrl && uploadedFile) {
-                                fileParts.push({
-                                    type: "file",
-                                    source: {
-                                        ...dataUrlToBase64Source(fileDataUrl),
-                                        filename: uploadedFile.name,
-                                    },
-                                });
-                            }
-
-                            const audioParts: Array<{
-                                type: "audio";
-                                source: {
-                                    kind: "base64";
-                                    data: string;
-                                    mimeType: string;
-                                };
-                            }> = [];
-
-                            if (audioDataUrl) {
-                                audioParts.push({
-                                    type: "audio",
-                                    source: dataUrlToBase64Source(audioDataUrl),
-                                });
-                            }
-
-                            let nextInput: Record<string, unknown>;
-
-                            switch (activeAgent.capability) {
-                                case "text":
-                                case "search":
-                                case "image": {
-                                    nextInput = {
-                                        input: [
-                                            {
-                                                type: "message",
-                                                role: "user",
-                                                content: [
-                                                    { type: "text", text: prompt },
-                                                    ...imageParts,
-                                                ],
-                                            },
-                                        ],
-                                    };
-                                    break;
-                                }
-                                case "file": {
-                                    if (fileParts.length === 0) {
-                                        setClientError("Upload a local file for the file demo.");
-                                        return;
-                                    }
-
-                                    nextInput = {
-                                        input: [
-                                            {
-                                                type: "message",
-                                                role: "user",
-                                                content: [
-                                                    { type: "text", text: prompt },
-                                                    ...fileParts,
-                                                ],
-                                            },
-                                        ],
-                                    };
-                                    break;
-                                }
-                                case "audio": {
-                                    if (audioParts.length === 0) {
-                                        setClientError(
-                                            "Upload a local audio file for the audio demo.",
-                                        );
-                                        return;
-                                    }
-
-                                    nextInput = {
-                                        input: [
-                                            {
-                                                type: "message",
-                                                role: "user",
-                                                content: [
-                                                    { type: "text", text: prompt },
-                                                    ...audioParts,
-                                                ],
-                                            },
-                                        ],
-                                        modalities: ["text", "audio"],
-                                        audio: {
-                                            voice: "alloy",
-                                            format: "wav",
-                                        },
-                                    };
-                                    break;
-                                }
-                                default: {
-                                    setClientError("Unsupported capability.");
-                                    return;
-                                }
-                            }
-
-                            if (isImageCapability(activeAgent.capability)) {
-                                nextInput.modalities = ["image"];
-                            }
-
-                            await sendMessage(nextInput as never);
+                            await sendMessage(nextInput.value as never);
 
                             setInput("");
                             if (isImageCapability(activeAgent.capability)) {
                                 setReferenceImageUrl("");
                                 setReferenceImageFile(null);
-                            }
-                            if (isFileCapability(activeAgent.capability)) {
-                                setUploadedFile(null);
                             }
                             if (isAudioCapability(activeAgent.capability)) {
                                 setUploadedAudio(null);
@@ -614,10 +575,10 @@ export default function Page() {
                                     ? "Describe the image you want..."
                                     : activeAgent.capability === "search"
                                       ? "Ask for current information..."
-                                      : isFileCapability(activeAgent.capability)
-                                        ? "Ask about the uploaded file..."
-                                        : isAudioCapability(activeAgent.capability)
-                                          ? "Ask to transcribe, summarize, or reply to the audio..."
+                                      : activeAgent.capability === "datetime"
+                                        ? "Ask for the current time, date, or timezone..."
+                                      : isAudioCapability(activeAgent.capability)
+                                          ? "Chat normally, or ask to transcribe/summarize uploaded audio..."
                                           : "Ask something..."
                             }
                             aria-label="Prompt"
@@ -653,28 +614,10 @@ export default function Page() {
                             </label>
                         ) : null}
 
-                        {capabilitySupportsFileUpload(activeAgent.capability) ? (
-                            <label className="grid gap-1 border border-[color:var(--border)] bg-black px-3 py-2.5 text-sm text-[color:var(--foreground)]">
-                                <span className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">
-                                    Local file
-                                </span>
-                                <input
-                                    type="file"
-                                    onChange={(event) => {
-                                        setUploadedFile(event.target.files?.[0] ?? null);
-                                    }}
-                                    className="text-sm"
-                                />
-                                <span className="text-xs text-[color:var(--muted)]">
-                                    {uploadedFile?.name ?? "No file selected"}
-                                </span>
-                            </label>
-                        ) : null}
-
                         {capabilitySupportsAudioUpload(activeAgent.capability) ? (
                             <label className="grid gap-1 border border-[color:var(--border)] bg-black px-3 py-2.5 text-sm text-[color:var(--foreground)]">
                                 <span className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">
-                                    Local audio file
+                                    Optional local audio file
                                 </span>
                                 <input
                                     type="file"
@@ -696,10 +639,10 @@ export default function Page() {
                                     ? "Text chat supports multimodal input. Add a public image URL or local image file."
                                     : activeAgent.capability === "search"
                                       ? "This variant includes OpenRouter hosted web search."
-                                      : activeAgent.capability === "file"
-                                        ? "Upload a local file and ask the model to read or summarize it."
-                                        : activeAgent.capability === "audio"
-                                          ? "Upload audio to transcribe it and request spoken output."
+                                      : activeAgent.capability === "datetime"
+                                        ? "This variant includes OpenRouter hosted datetime lookup."
+                                      : activeAgent.capability === "audio"
+                                          ? "Text input works on its own; upload audio if you want transcription or spoken output."
                                           : "Image generation supports text-only or image-guided prompts."}
                             </p>
                             <div className="flex items-center gap-2">

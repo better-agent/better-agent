@@ -31,17 +31,17 @@ const openrouterSearch = defineAgent({
     tools: [openrouterProvider.tools.webSearch({ search_context_size: "medium" })],
 });
 
-const openrouterFile = defineAgent({
-    name: "openrouter-file",
-    model: openrouterProvider.file("openai/gpt-5.4-mini"),
-    instruction: `${conciseInstruction} Read uploaded files when present and answer from their contents.`,
+const openrouterDatetime = defineAgent({
+    name: "openrouter-datetime",
+    model: openrouterProvider.text("openai/gpt-5.4-mini"),
+    instruction: `${conciseInstruction} Use the datetime tool when the user asks for the current time, date, timezone, or calendar context.`,
+    tools: [openrouterProvider.tools.datetime()],
 });
 
 const openrouterAudio = defineAgent({
     name: "openrouter-audio",
-    model: openrouterProvider.audio("openai/gpt-4o-audio-preview"),
+    model: openrouterProvider.audio("openai/gpt-audio-mini"),
     instruction: `${conciseInstruction} When audio is provided, transcribe it, summarize it when useful, and respond clearly.`,
-    defaultModalities: ["text", "audio"] as const,
 });
 
 const openrouterImage = defineAgent({
@@ -54,7 +54,7 @@ const app = betterAgent({
     agents: [
         openrouterText,
         openrouterSearch,
-        openrouterFile,
+        openrouterDatetime,
         openrouterAudio,
         openrouterImage,
     ],

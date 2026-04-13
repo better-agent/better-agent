@@ -4,7 +4,6 @@ import { createOpenRouterNativeToolBuilders } from "./tools";
 import type {
     OpenRouterAudioModelId,
     OpenRouterConfig,
-    OpenRouterFileModelId,
     OpenRouterImageModelId,
     OpenRouterModelId,
     OpenRouterProvider,
@@ -25,10 +24,6 @@ export const createOpenRouter = (config: OpenRouterConfig): OpenRouterProvider =
 
         text<M extends OpenRouterResponseModelId>(modelId: M) {
             return createOpenRouterGenerativeModel(modelId, httpClient, "responses");
-        },
-
-        file<M extends OpenRouterFileModelId>(modelId: M) {
-            return createOpenRouterGenerativeModel(modelId, httpClient, "files");
         },
 
         audio<M extends OpenRouterAudioModelId>(modelId: M) {

@@ -62,8 +62,35 @@ const OpenRouterFunctionToolSchema = z.object({
 });
 
 const OpenRouterWebSearchToolSchema = z.object({
-    type: z.literal("web_search"),
-    search_context_size: z.enum(["low", "medium", "high"]).optional(),
+    type: z.literal("openrouter:web_search"),
+    parameters: z
+        .object({
+            engine: z.enum(["auto", "native", "exa", "firecrawl", "parallel"]).optional(),
+            max_results: z.number().int().positive().optional(),
+            max_total_results: z.number().int().positive().optional(),
+            search_context_size: z.enum(["low", "medium", "high"]).optional(),
+            allowed_domains: z.array(z.string()).optional(),
+            excluded_domains: z.array(z.string()).optional(),
+            user_location: z
+                .object({
+                    type: z.literal("approximate"),
+                    city: z.string().optional(),
+                    region: z.string().optional(),
+                    country: z.string().optional(),
+                    timezone: z.string().optional(),
+                })
+                .optional(),
+        })
+        .optional(),
+});
+
+const OpenRouterDatetimeToolSchema = z.object({
+    type: z.literal("openrouter:datetime"),
+    parameters: z
+        .object({
+            timezone: z.string().optional(),
+        })
+        .optional(),
 });
 
 const OpenRouterToolChoiceSchema = z.union([
@@ -153,7 +180,15 @@ export const OpenRouterChatCompletionsRequestSchema = z
         messages: z.array(OpenRouterMessageSchema),
         modalities: z.array(z.enum(["text", "image", "audio"])).optional(),
         audio: OpenRouterAudioRequestSchema.optional(),
-        tools: z.array(z.union([OpenRouterFunctionToolSchema, OpenRouterWebSearchToolSchema])).optional(),
+        tools: z
+            .array(
+                z.union([
+                    OpenRouterFunctionToolSchema,
+                    OpenRouterWebSearchToolSchema,
+                    OpenRouterDatetimeToolSchema,
+                ]),
+            )
+            .optional(),
         tool_choice: OpenRouterToolChoiceSchema.optional(),
         response_format: OpenRouterResponseFormatSchema,
         stream: z.boolean().optional(),

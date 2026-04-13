@@ -369,8 +369,18 @@ export function mapToOpenRouterChatCompletionsRequest<
             if (isOpenRouterNativeToolDefinition(tool)) {
                 if (tool.type === "web_search") {
                     mappedTools.push({
-                        type: "web_search",
-                        ...tool.config,
+                        type: "openrouter:web_search",
+                        ...(Object.keys(tool.config).length > 0
+                            ? { parameters: tool.config }
+                            : {}),
+                    });
+                }
+                if (tool.type === "datetime") {
+                    mappedTools.push({
+                        type: "openrouter:datetime",
+                        ...(Object.keys(tool.config).length > 0
+                            ? { parameters: tool.config }
+                            : {}),
                     });
                 }
                 continue;

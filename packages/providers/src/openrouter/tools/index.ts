@@ -1,11 +1,27 @@
 import type { HostedToolDefinition } from "@better-agent/core";
 
-export type OpenRouterNativeToolType = "web_search";
+export type OpenRouterNativeToolType = "web_search" | "datetime";
 
 export type OpenRouterNativeToolConfig<TType extends string> = TType extends "web_search"
     ? {
+          engine?: "auto" | "native" | "exa" | "firecrawl" | "parallel";
+          max_results?: number;
+          max_total_results?: number;
           search_context_size?: "low" | "medium" | "high";
+          allowed_domains?: string[];
+          excluded_domains?: string[];
+          user_location?: {
+              type: "approximate";
+              city?: string;
+              region?: string;
+              country?: string;
+              timezone?: string;
+          };
       }
+    : TType extends "datetime"
+      ? {
+            timezone?: string;
+        }
     : never;
 
 export type OpenRouterNativeToolDefinition<
@@ -21,6 +37,8 @@ export function createOpenRouterNativeToolBuilders() {
     return {
         webSearch: (config: OpenRouterNativeToolConfig<"web_search"> = {}) =>
             createNativeTool("web_search", config),
+        datetime: (config: OpenRouterNativeToolConfig<"datetime"> = {}) =>
+            createNativeTool("datetime", config),
     };
 }
 

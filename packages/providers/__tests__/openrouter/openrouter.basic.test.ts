@@ -2,10 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { createOpenRouter } from "../../src/openrouter";
 
 describe("openrouter provider model metadata", () => {
-    test("creates OpenRouter text, file, audio, and image models", () => {
+    test("creates OpenRouter text, audio, and image models", () => {
         const openrouter = createOpenRouter({});
         const textModel = openrouter.model("openai/gpt-4.1-mini");
-        const fileModel = openrouter.file("openai/gpt-4.1-mini");
         const audioModel = openrouter.audio("openai/gpt-4o-audio-preview");
         const imageModel = openrouter.image("google/gemini-2.5-flash-image-preview");
 
@@ -13,11 +12,6 @@ describe("openrouter provider model metadata", () => {
         expect(textModel.modelId).toBe("openai/gpt-4.1-mini");
         expect("text" in textModel.caps.outputModalities).toBe(true);
         expect("image" in textModel.caps.outputModalities).toBe(true);
-
-        expect(fileModel.providerId).toBe("openrouter");
-        expect(fileModel.modelId).toBe("openai/gpt-4.1-mini");
-        expect(fileModel.caps.inputModalities.file).toBe(true);
-        expect("text" in fileModel.caps.outputModalities).toBe(true);
 
         expect(audioModel.providerId).toBe("openrouter");
         expect(audioModel.modelId).toBe("openai/gpt-4o-audio-preview");
