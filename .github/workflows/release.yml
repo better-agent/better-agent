@@ -65,66 +65,77 @@ jobs:
           echo "npm_tag=${NPM_TAG}" >> "$GITHUB_OUTPUT"
           echo "Using npm tag: ${NPM_TAG}"
 
-      - name: publish shared
-        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
-        working-directory: ./packages/shared
+      - name: publish packages
+        shell: bash
+        run: |
+          packages=(
+            shared
+            schema
+            core
+            adapters
+            ai-sdk
+            anthropic
+            client
+            create
+            drizzle
+            gemini
+            kysely
+            ollama
+            openai
+            openrouter
+            plugins
+            prisma
+            redis
+            workers-ai
+            xai
+          )
+
+          for package in "${packages[@]}"; do
+            echo "Publishing packages/${package}"
+            (
+              cd "packages/${package}"
+              bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
+            )
+          done
         env:
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
 
-      - name: publish core
-        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
-        working-directory: ./packages/core
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
+      # TODO: Remove this once beta releases should no longer be installed by default.
+      - name: promote beta to latest
+        if: steps.determine_npm_tag.outputs.npm_tag == 'beta'
+        shell: bash
+        run: |
+          packages=(
+            shared
+            schema
+            core
+            adapters
+            ai-sdk
+            anthropic
+            client
+            create
+            drizzle
+            gemini
+            kysely
+            ollama
+            openai
+            openrouter
+            plugins
+            prisma
+            redis
+            workers-ai
+            xai
+          )
 
-      - name: publish adapters
-        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
-        working-directory: ./packages/adapters
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
+          for package in "${packages[@]}"; do
+            package_name="$(bun -e "console.log((await Bun.file('packages/${package}/package.json').json()).name)")"
+            package_version="$(bun -e "console.log((await Bun.file('packages/${package}/package.json').json()).version)")"
 
-      - name: publish client
-        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
-        working-directory: ./packages/client
+            echo "Promoting ${package_name}@${package_version} to latest"
+            npm dist-tag add "${package_name}@${package_version}" latest
+          done
         env:
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
-
-      - name: publish providers
-        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
-        working-directory: ./packages/providers
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
-
-      - name: publish plugins
-        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
-        working-directory: ./packages/plugins
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
-
-      - name: publish cli
-        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
-        working-directory: ./packages/cli
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
-
-      - name: publish create
-        run: bun publish --access public --tolerate-republish --tag "${{ steps.determine_npm_tag.outputs.npm_tag }}"
-        working-directory: ./packages/create
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
