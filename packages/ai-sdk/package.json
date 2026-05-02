@@ -1,6 +1,6 @@
 {
     "name": "@better-agent/ai-sdk",
-    "version": "0.1.0-beta.4",
+    "version": "0.2.0-beta.1",
     "description": "Better Agent adapter for AI SDK providers",
     "license": "MIT",
     "repository": {

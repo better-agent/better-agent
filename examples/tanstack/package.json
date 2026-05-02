@@ -8,9 +8,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@better-agent/client": "0.1.0-beta.4",
-    "@better-agent/core": "0.1.0-beta.4",
-    "@better-agent/openai": "0.1.0-beta.4",
+    "@better-agent/client": "workspace:*",
+    "@better-agent/core": "workspace:*",
+    "@better-agent/openai": "workspace:*",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
