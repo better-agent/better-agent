@@ -1,0 +1,120 @@
+---
+title: "Express"
+description: "Use Better Agent with Express."
+icon: express
+---
+
+# Express
+
+Use the Express adapter to mount Better Agent, then connect from any frontend
+with the same client.
+
+## Install
+
+```bash
+npm install @better-agent/adapters
+```
+
+## Server
+
+```typescript
+// lib/better-agent/server.ts
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { openai } from "@better-agent/openai";
+
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help customers.",
+});
+
+const app = betterAgent({
+  agents: [supportAgent],
+  basePath: "/api/agents",
+});
+
+export default app;
+```
+
+## Route
+
+Mount the adapter under the same path your client uses.
+
+```typescript
+import express from "express";
+import { toExpressHandler } from "@better-agent/adapters/express";
+import app from "./lib/better-agent/server";
+
+const server = express();
+
+server.use("/api/agents", toExpressHandler(app));
+
+server.listen(3000);
+```
+
+The adapter converts Express request and response objects to Better Agent's web
+handler.
+
+## Body parsing
+
+The adapter can forward Express body parser output. Mount JSON middleware before
+the Better Agent route if other middleware expects parsed JSON.
+
+```typescript
+server.use(express.json());
+server.use("/api/agents", toExpressHandler(app));
+```
+
+## CORS
+
+If your frontend runs on a different origin, add CORS before the Better Agent
+route.
+
+```bash
+npm install cors
+```
+
+```typescript
+import cors from "cors";
+
+server.use(
+  "/api/agents",
+  cors({
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
+server.use("/api/agents", toExpressHandler(app));
+```
+
+## Client
+
+Use an absolute URL when the frontend is served from another origin.
+
+```typescript
+import { createClient } from "@better-agent/client";
+import type app from "./lib/better-agent/server";
+
+export const client = createClient<typeof app>({
+  baseURL: "http://localhost:3000/api/agents",
+});
+```
+
+## Auth and headers
+
+Headers from the Express request are forwarded to Better Agent. Use
+[Auth](/docs/concepts/auth) to resolve identity from cookies, bearer tokens, or
+API keys.
+
+## Features
+
+The mounted route supports runs, streams, threads, interrupts, client tools, and
+approvals. Use [Client](/docs/concepts/client) from your frontend to call it.
+
+## Next
+
+See [Client](/docs/concepts/client), [Tools](/docs/concepts/tools),
+[Human in the Loop](/docs/concepts/hil), [Memory](/docs/concepts/memory),
+[Events](/docs/concepts/events), [Auth](/docs/concepts/auth), and
+[Storage](/docs/concepts/storage).

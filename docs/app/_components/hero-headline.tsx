@@ -36,8 +36,8 @@ export default function HeroHeadline() {
     const activePhrase = heroPhrases[activeIndex];
 
     return (
-        <h1 className="m-0 flex flex-col items-center gap-[0.05em] text-balance text-[clamp(2.18rem,5.8vw,2.66rem)] font-semibold leading-[1.09] tracking-[-0.025em] md:gap-[0.035em] md:text-[clamp(2.04rem,3.85vw,2.9rem)] md:leading-[1.05]">
-            <span className="block text-[color:color-mix(in_srgb,var(--foreground)_97%,white_3%)]">
+        <h1 className="m-0 flex flex-col items-center gap-[0.05em] text-balance text-[clamp(2.18rem,5.8vw,2.66rem)] font-[480] leading-[1.09] tracking-[-0.015em] md:gap-[0.035em] md:text-[clamp(2.04rem,3.85vw,2.9rem)] md:leading-[1.05]">
+            <span className="block text-[color:color-mix(in_srgb,var(--foreground)_92%,transparent)]">
                 The better way to
             </span>
             <span className="block overflow-visible pb-[0.15em]">
@@ -55,7 +55,7 @@ export default function HeroHeadline() {
                     {activePhrase.text}
                 </span>
             </span>
-            <span className="block text-[color:color-mix(in_srgb,var(--foreground)_97%,white_3%)]">
+            <span className="block text-[color:color-mix(in_srgb,var(--foreground)_92%,transparent)]">
                 in{" "}
                 <span className="inline-block bg-[var(--hero-selection-bg)] px-[0.31em] py-[0.07em] text-[var(--hero-selection-fg)] [box-decoration-break:clone] [-webkit-box-decoration-break:clone] [clip-path:polygon(0.18em_0,100%_0,calc(100%-0.18em)_100%,0_100%)]">
                     TypeScript

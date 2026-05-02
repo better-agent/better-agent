@@ -1,0 +1,129 @@
+---
+title: "OpenAI"
+description: "Use OpenAI models and hosted tools."
+icon: openai
+---
+
+# OpenAI
+
+## Install
+
+```bash
+npm install @better-agent/openai
+```
+
+## Agent model
+
+```typescript
+import { defineAgent } from "@better-agent/core";
+import { openai } from "@better-agent/openai";
+
+export const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help customers.",
+});
+```
+
+## Configure
+
+Use `createOpenAI` when you need custom provider settings.
+
+```typescript
+import { createOpenAI } from "@better-agent/openai";
+
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+```
+
+## Hosted tools
+
+OpenAI hosted tools are available on `openai.tools`.
+
+```typescript
+const agent = defineAgent({
+  name: "researcher",
+  model: openai("gpt-5.5"),
+  tools: [
+    openai.tools.webSearch({ searchContextSize: "medium" }),
+  ],
+});
+```
+
+See [Tools](/docs/concepts/tools) for local tools, client tools, approvals, MCP,
+and hosted provider tools.
+
+## Direct generation
+
+Use generation models when a tool needs a focused model call without running an
+agent.
+
+```typescript
+const text = openai.text("gpt-5.5");
+
+const summarize = defineTool({
+  name: "summarize",
+  description: "Summarize long text before the agent uses it.",
+  inputSchema: z.object({
+    content: z.string(),
+  }),
+  execute: async ({ content }) => {
+    const result = await text.generate({
+      input: `Summarize this in three bullets:\n\n${content}`,
+    });
+
+    return { summary: result.text };
+  },
+});
+```
+
+Other generation helpers:
+
+```typescript
+const embedding = openai.embedding("text-embedding-3-small");
+const image = openai.image("gpt-image-1");
+const speech = openai.speech("gpt-4o-mini-tts");
+const transcription = openai.transcription("gpt-4o-mini-transcribe");
+```
+
+## Model types
+
+`openai("gpt-5.5")` is an agent model for `defineAgent`. Agent models need text
+for messages, tool decisions, and streaming. They can support more than text
+depending on the model.
+
+`openai.text(...)`, `openai.embedding(...)`, and the other helpers are
+generation models for direct calls from app code or tools. They do not run the
+agent loop.
+
+## Provider options
+
+Pass OpenAI options at run time with the `openai` provider key.
+
+```typescript
+await app.agent("support").run({
+  messages,
+  providerOptions: {
+    openai: {
+      reasoningEffort: "medium",
+    },
+  },
+});
+```
+
+## Capabilities
+
+| Feature           | Support |
+| ----------------- | ------- |
+| Agent model       | Yes     |
+| Text generation   | Yes     |
+| Streaming         | Yes     |
+| Structured output | Yes     |
+| Hosted tools      | Yes     |
+| Embeddings        | Yes     |
+| Images            | Yes     |
+| Speech            | Yes     |
+| Transcription     | Yes     |
+
+Source: built on [`@ai-sdk/openai`](https://www.npmjs.com/package/@ai-sdk/openai).

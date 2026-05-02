@@ -1,303 +1,123 @@
-import type { AgentDefinition, AgentModelCaps, AnyAgentDefinition } from "../agent";
-import type {
-    ConversationRuntimeStateStore,
-    ConversationStore,
-    StreamEvent,
-    StreamStore,
-} from "../persistence";
-import type { Plugin, PluginRuntime } from "../plugins";
-import type { ConversationItem, InferOutputSchema, OutputSchemaForCaps } from "../providers";
-import type {
-    ResumeConversationOptions,
-    ResumeStreamOptions,
-    RunOptionsForAgent,
-    RunOutputOverrideForAgent,
-    RunResultForAgent,
-    StreamResultForAgent,
-    SubmitToolApprovalParams,
-    SubmitToolResultParams,
-} from "../run";
-import type { InferSchemaInput } from "../schema";
-import type { AgentToolDefinition } from "../tools";
+import type { AgentEvent, AgentState } from "../ag-ui";
+import type { AgentInputMessage } from "../ag-ui/messages";
+import type { AgentContextOf, AnyDefinedAgent } from "../agent/types";
+import type { AuthResolver } from "../auth/types";
+import type { AgentMemory } from "../memory";
+import type { AgentProviderOptionsFor, AgentToolChoice } from "../models";
+import type { Plugin } from "../plugins";
+import type { RunResult, StreamResult } from "../runtime/types";
+import type { BetterAgentIdGenerator } from "../runtime/utils";
+import type { AgentOutput, InferAgentOutput } from "../schema";
+import type { BetterAgentStorage } from "../storage";
 
-export interface BetterAgentAdvancedConfig {
-    /**
-     * Default timeout for waiting on client tool results.
-     */
-    clientToolResultTimeoutMs?: number;
-    /**
-     * Default timeout for waiting on tool approvals.
-     */
-    toolApprovalTimeoutMs?: number;
-    /**
-     * Controls what the built-in HTTP handler does when the original request disconnects.
-     *
-     * - `abort`: abort the run with the request.
-     * - `continue`: keep the run executing on the server and only stop the disconnected reader.
-     *
-     * This only affects Better Agent's built-in HTTP/server layer.
-     */
-    onRequestDisconnect?: "abort" | "continue";
-    /** Heartbeat interval for built-in SSE responses.
-     *
-     * This only affects Better Agent's built-in HTTP/server layer.
-     */
-    sseHeartbeatMs?: number;
-}
-
-/**
- * App configuration.
- *
- * @typeParam TAgents Agents bundled into the app.
- * @typeParam TPlugins Plugins registered on the app.
- * @typeParam TTools Shared tools available to agents.
- */
 export interface BetterAgentConfig<
-    TAgents extends readonly AnyAgentDefinition[] = readonly AnyAgentDefinition[],
-    TPlugins extends readonly Plugin[] = readonly Plugin[],
-    TTools extends readonly AgentToolDefinition[] = readonly AgentToolDefinition[],
+    TAgents extends readonly AnyDefinedAgent[] = readonly AnyDefinedAgent[],
 > {
-    /** Built-in runtime and HTTP behavior. */
-    readonly advanced?: BetterAgentAdvancedConfig;
-
-    /** Agents included in the app. */
-    readonly agents: TAgents;
-
-    /**
-     * Shared tools available to agents in this app.
-     *
-     * Agents can still declare their own tools.
-     */
-    readonly tools?: TTools;
-
-    /**
-     * Plugins applied to the app.
-     *
-     * Use plugins for cross-cutting behavior such as logging, auth, or rate limiting.
-     */
-    readonly plugins?: TPlugins;
-
-    /** Persistence configuration for runs and streams. */
-    readonly persistence?: {
-        /** Stream store for event resumption. */
-        stream?: StreamStore;
-        /** Conversation store. */
-        conversations?: ConversationStore;
-        /** Optional conversation runtime-state store for conversation-based stream resume. */
-        runtimeState?: ConversationRuntimeStateStore;
+    agents: TAgents;
+    plugins?: readonly Plugin[];
+    auth?: AuthResolver;
+    storage?: BetterAgentStorage;
+    memory?: AgentMemory;
+    advanced?: {
+        generateId?: BetterAgentIdGenerator;
+        stream?: {
+            abortOnDisconnect?: boolean;
+        };
     };
-
-    /**
-     * Optional bearer secret for the built-in HTTP server.
-     * When set, built-in server routes require `Authorization: Bearer <secret>`
-     * unless a plugin endpoint is marked `public: true`.
-     */
-    readonly secret?: string;
-
-    /**
-     * Optional base URL for the app's API, used by clients and framework integrations.
-     *
-     * If set, the URL pathname is also used as the built-in server `basePath`.
-     * For example, `https://example.com/api` makes the built-in server available under `/api`.
-     */
-    readonly baseURL?: string;
+    basePath?: string;
 }
 
-/**
- * App configuration with erased generic detail.
- */
-export type AnyBetterAgentConfig = BetterAgentConfig<
-    readonly AnyAgentDefinition[],
-    readonly Plugin[],
-    readonly AgentToolDefinition[]
->;
+export interface AppRunInput<
+    TContext = unknown,
+    TState = unknown,
+    TProviderOptions = unknown,
+    TOutput extends AgentOutput | undefined = AgentOutput | undefined,
+> {
+    threadId?: string;
+    messages?: AgentInputMessage[];
+    context?: TContext;
+    state?: TState;
+    toolChoice?: AgentToolChoice;
+    output?: TOutput;
+    providerOptions?: TProviderOptions;
+    maxSteps?: number;
+    signal?: AbortSignal;
+    resume?: Array<{
+        interruptId: string;
+        status: "resolved" | "cancelled";
+        payload?: unknown;
+    }>;
+}
 
-/**
- * HTTP request handler used by framework integrations.
- */
-export type BetterAgentHandler = (request: Request) => Promise<Response>;
-
-/**
- * Looks up one agent type by its name.
- */
 export type AgentByName<
-    TAgents extends readonly AnyAgentDefinition[],
+    TAgents extends readonly AnyDefinedAgent[],
     TName extends TAgents[number]["name"],
 > = Extract<TAgents[number], { name: TName }>;
 
-type PublicAgentForApp<TAgent> = TAgent extends AgentDefinition<
-    infer TName,
-    infer TModel,
-    infer TContextSchema,
-    infer TContext,
-    infer TTools,
-    infer TOutputSchema,
-    infer _TDefaultModalities
->
-    ? {
-          readonly name: TName;
-          readonly model: TModel;
-          readonly tools: PublicToolsForApp<TTools>;
-      } & ([TContextSchema] extends [undefined]
-          ? { contextSchema?: undefined }
-          : { contextSchema: PublicSchemaMarker<TContext> }) &
-          ([TOutputSchema] extends [undefined]
-              ? { outputSchema?: undefined }
-              : { outputSchema: PublicOutputSchema<TModel, TOutputSchema> })
-    : TAgent;
+export type ProviderOptionsForAgent<TAgent> = TAgent extends { model: infer TModel }
+    ? AgentProviderOptionsFor<TModel>
+    : never;
 
-export type PublicAgentsForApp<TAgents extends readonly AnyAgentDefinition[]> = {
-    readonly [TIndex in keyof TAgents]: PublicAgentForApp<TAgents[TIndex]>;
-};
+export type OutputForAgent<TAgent> = TAgent extends { output?: infer TOutput }
+    ? TOutput extends AgentOutput
+        ? TOutput
+        : undefined
+    : undefined;
 
-type PublicSchemaMarker<TInput> = {
-    readonly "~standard"?: {
-        readonly types?: {
-            readonly input?: TInput;
-            readonly output?: TInput;
-        };
-    };
-};
+export type StructuredOutputForAgent<TAgent, TOutput> = TOutput extends AgentOutput
+    ? InferAgentOutput<TOutput>
+    : InferAgentOutput<OutputForAgent<TAgent>>;
 
-type PublicOutputSchema<TModel, TOutputSchema> = [TOutputSchema] extends [undefined]
-    ? undefined
-    : OutputSchemaForCaps<
-          AgentModelCaps<TModel>,
-          PublicSchemaMarker<InferOutputSchema<TOutputSchema>>
-      >;
-
-type PublicToolForApp<TTool> = TTool extends {
-    kind: infer TKind;
-    name: infer TName extends string;
-    schema: infer TSchema;
+export interface BetterAgentRuns {
+    abort(runId: string): Promise<void>;
+    resumeStream(input: {
+        runId: string;
+        afterSequence?: number;
+        signal?: AbortSignal;
+    }): AsyncIterable<AgentEvent & { seq: number }>;
 }
-    ? {
-          kind: TKind;
-          name: TName;
-          schema: PublicSchemaMarker<InferSchemaInput<TSchema>>;
-      }
-    : TTool;
 
-type PublicToolsForApp<TTools> = TTools extends readonly unknown[]
-    ? {
-          readonly [TIndex in keyof TTools]: PublicToolForApp<TTools[TIndex]>;
-      }
-    : TTools extends undefined
-      ? undefined
-      : PublicToolForApp<TTools>;
+export interface BaseAgentHandle<TAgent extends AnyDefinedAgent> {
+    name: TAgent["name"];
+    definition: TAgent;
+    run<TState = AgentState, TOutput extends AgentOutput | undefined = undefined>(
+        input: AppRunInput<
+            AgentContextOf<TAgent>,
+            TState,
+            ProviderOptionsForAgent<TAgent>,
+            TOutput
+        >,
+    ): Promise<RunResult<TState, StructuredOutputForAgent<TAgent, TOutput>>>;
+    stream<TState = AgentState, TOutput extends AgentOutput | undefined = undefined>(
+        input: AppRunInput<
+            AgentContextOf<TAgent>,
+            TState,
+            ProviderOptionsForAgent<TAgent>,
+            TOutput
+        >,
+    ): Promise<StreamResult<TState, StructuredOutputForAgent<TAgent, TOutput>>>;
+}
 
-/** Shared app-level input for `run()` and `stream()`. */
-export type AppRunInput<
-    TAgent extends AnyAgentDefinition = AnyAgentDefinition,
-    TOutput extends RunOutputOverrideForAgent<TAgent> | undefined = undefined,
-> = RunOptionsForAgent<TAgent, TOutput>;
+export type AgentHandle<
+    TAgent extends AnyDefinedAgent,
+    TConfig extends BetterAgentConfig = BetterAgentConfig,
+> = BaseAgentHandle<TAgent> &
+    (TAgent extends { memory: false }
+        ? Record<never, never>
+        : TAgent extends { memory: AgentMemory }
+          ? { memory: AgentMemory }
+          : TConfig extends { memory: AgentMemory }
+            ? { memory: AgentMemory }
+            : Record<never, never>);
 
-/** Run options for `app.run()`. */
-export type AppRunOptions<
-    TAgent extends AnyAgentDefinition = AnyAgentDefinition,
-    TOutput extends RunOutputOverrideForAgent<TAgent> | undefined = undefined,
-> = AppRunInput<TAgent, TOutput>;
-
-/** Stream options for `app.stream()`. */
-export type AppStreamOptions<
-    TAgent extends AnyAgentDefinition = AnyAgentDefinition,
-    TOutput extends RunOutputOverrideForAgent<TAgent> | undefined = undefined,
-> = AppRunInput<TAgent, TOutput>;
-
-/**
- * Better Agent app bundle.
- *
- * @typeParam TAgents Agents bundled into the app.
- * @typeParam TPlugins Plugins registered on the app.
- */
 export interface BetterAgentApp<
-    TAgents extends readonly AnyAgentDefinition[] = readonly AnyAgentDefinition[],
-    TPlugins extends readonly Plugin[] = readonly Plugin[],
+    TAgents extends readonly AnyDefinedAgent[] = readonly AnyDefinedAgent[],
+    TConfig extends BetterAgentConfig<TAgents> = BetterAgentConfig<TAgents>,
 > {
-    /** App configuration used to construct this instance. */
-    readonly config: BetterAgentConfig<TAgents, TPlugins>;
-
-    /**
-     * Runs an agent and waits for the final result.
-     */
-    run: <
-        TName extends TAgents[number]["name"],
-        TOutput extends
-            | RunOutputOverrideForAgent<AgentByName<TAgents, TName>>
-            | undefined = undefined,
-    >(
-        agentName: TName,
-        options: AppRunOptions<AgentByName<TAgents, TName>, TOutput>,
-    ) => Promise<RunResultForAgent<AgentByName<TAgents, TName>, TOutput>>;
-
-    /**
-     * Streams agent execution events.
-     */
-    stream: <
-        TName extends TAgents[number]["name"],
-        TOutput extends
-            | RunOutputOverrideForAgent<AgentByName<TAgents, TName>>
-            | undefined = undefined,
-    >(
-        agentName: TName,
-        options: AppStreamOptions<AgentByName<TAgents, TName>, TOutput>,
-    ) => StreamResultForAgent<AgentByName<TAgents, TName>, TOutput>;
-
-    /**
-     * Resumes a stored stream by stream id.
-     */
-    resumeStream: (params: ResumeStreamOptions) => Promise<AsyncIterable<StreamEvent> | null>;
-
-    /**
-     * Resumes the active stream for a conversation.
-     */
-    resumeConversation: <TName extends TAgents[number]["name"]>(
-        agentName: TName,
-        params: ResumeConversationOptions,
-    ) => Promise<AsyncIterable<StreamEvent> | null>;
-
-    /** Aborts an active run by id. */
-    abortRun: (runId: string) => Promise<boolean>;
-
-    /**
-     * Load the persisted durable history for one conversation.
-     *
-     * Returns `null` when no stored conversation exists.
-     */
-    loadConversation: <TName extends TAgents[number]["name"]>(
-        agentName: TName,
-        conversationId: string,
-    ) => Promise<{ items: ConversationItem[] } | null>;
-
-    /**
-     * Submits a result for a pending client tool call.
-     */
-    submitToolResult: (params: SubmitToolResultParams) => Promise<boolean>;
-
-    /**
-     * Submits a tool approval decision.
-     */
-    submitToolApproval: (params: SubmitToolApprovalParams) => Promise<boolean>;
-
-    /**
-     * HTTP handler for framework integration.
-     */
-    handler: BetterAgentHandler;
-}
-
-/**
- * Internal app context used while wiring components together.
- *
- * @internal
- */
-export interface AppContext {
-    /** The app configuration */
-    config: AnyBetterAgentConfig;
-    /** Registry of all components */
-    registry: {
-        agents: Map<string, AnyAgentDefinition>;
-        tools: AgentToolDefinition[];
-    };
-    /** Plugin runtime for executing middleware and guards */
-    pluginRuntime: PluginRuntime | null;
+    config: TConfig;
+    handler(request: Request): Promise<Response>;
+    agent<TName extends TAgents[number]["name"]>(
+        name: TName,
+    ): AgentHandle<AgentByName<TAgents, TName>, TConfig>;
+    runs: BetterAgentRuns;
 }

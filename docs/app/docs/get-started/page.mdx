@@ -1,0 +1,80 @@
+---
+title: "Get Started"
+description: "Install Better Agent, define your first agent, and run it."
+icon: terminal
+---
+
+# Get Started
+
+Create a Better Agent app, define one agent, and run it locally.
+
+## Requirements
+
+- **Bun** ≥ 1.3.3 or **Node** ≥ 20
+- An API key from at least one provider, such as [OpenAI](/docs/providers/openai)
+
+## Install
+
+Install the core package and a provider:
+
+```bash
+npm install @better-agent/core @better-agent/openai
+```
+
+Use the CLI when you want a full framework scaffold:
+
+```bash
+npx create-better-agent@beta
+```
+
+## Create an agent
+
+An agent is a name, a model, and an instruction.
+
+```typescript
+// lib/better-agent/server.ts
+import { defineAgent, betterAgent } from "@better-agent/core";
+import { openai } from "@better-agent/openai";
+
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help customers.",
+});
+
+export const app = betterAgent({
+  agents: [supportAgent],
+});
+```
+
+`betterAgent()` wires agents into a typed app.
+
+## Run it
+
+```typescript
+const result = await app.agent("support").run({
+  messages: [{ role: "user", content: "Help me write a refund policy." }],
+});
+
+console.log(result.messages);
+```
+
+## Serve over HTTP
+
+`app.handler` is a standard `Request` to `Response` function. Mount it in any
+framework route.
+
+```typescript
+Bun.serve({
+  port: 3000,
+  fetch: app.handler,
+});
+```
+
+See [Integrations](/docs/integrations) for framework-specific routes.
+
+## Next
+
+- [Agent](/docs/concepts/agent) for the full agent config.
+- [Tools](/docs/concepts/tools) when your agent needs to take actions.
+- [Client](/docs/concepts/client) when calling agents from a frontend.

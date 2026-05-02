@@ -1,0 +1,56 @@
+{
+    "name": "@better-agent/ai-sdk",
+    "version": "0.1.0-beta.4",
+    "description": "Better Agent adapter for AI SDK providers",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/better-agent/better-agent.git",
+        "directory": "packages/ai-sdk"
+    },
+    "homepage": "https://github.com/better-agent/better-agent/tree/main/packages/ai-sdk",
+    "bugs": {
+        "url": "https://github.com/better-agent/better-agent/issues"
+    },
+    "engines": {
+        "bun": ">=1.3.3",
+        "node": ">=20"
+    },
+    "type": "module",
+    "types": "./dist/index.d.mts",
+    "sideEffects": false,
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.mts",
+            "import": "./dist/index.mjs"
+        }
+    },
+    "scripts": {
+        "build": "bunx tsdown",
+        "dev": "bunx tsdown --watch --no-clean",
+        "test": "bun test",
+        "lint:package": "bunx publint run --strict",
+        "lint:types": "npm_config_cache=../../.npm-cache bunx attw --profile esm-only --pack .",
+        "lint": "bunx biome check .",
+        "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+        "format": "bunx biome format --write .",
+        "clean": "bunx rimraf dist"
+    },
+    "files": ["dist"],
+    "publishConfig": {
+        "access": "public"
+    },
+    "dependencies": {
+        "@better-agent/shared": "workspace:*"
+    },
+    "devDependencies": {
+        "@better-agent/core": "workspace:*",
+        "@types/bun": "^1.3.12",
+        "@types/node": "^22.19.17",
+        "ai": "^6.0.168"
+    },
+    "peerDependencies": {
+        "@better-agent/core": "workspace:*",
+        "ai": "^6.0.0"
+    }
+}

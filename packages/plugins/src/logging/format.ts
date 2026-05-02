@@ -1,4 +1,4 @@
-import type { LogEntry, LoggingPluginConfig } from "./types";
+import type { LogEntry, LoggingConfig } from "./types";
 
 const order: Record<LogEntry["level"], number> = {
     debug: 10,
@@ -9,7 +9,7 @@ const order: Record<LogEntry["level"], number> = {
 
 /** Returns true when the entry should be logged at the current level. */
 export function shouldLog(
-    currentLevel: NonNullable<LoggingPluginConfig["level"]>,
+    currentLevel: NonNullable<LoggingConfig["level"]>,
     entry: LogEntry,
 ): boolean {
     return order[entry.level] >= order[currentLevel];

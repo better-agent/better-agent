@@ -1,0 +1,25 @@
+import { betterAgent, createInMemoryStorage, createMemory, defineAgent } from "@better-agent/core";
+{{{providerImports}}}
+{{{pluginImports}}}
+
+{{{providerInitializers}}}
+
+{{{agentDefinitions}}}
+
+const memory = createMemory({
+  storage: createInMemoryStorage(),
+  scope: () => "static",
+});
+
+const app = betterAgent({
+  agents: [{{agentNames}}],
+  auth: () => ({ subject: "static" }),
+  memory,
+  plugins: [
+    {{{pluginRegistrations}}}{{#if commentedPluginRegistrations}}
+    {{{commentedPluginRegistrations}}}{{/if}}
+  ],
+  basePath: "{{baseUrl}}",
+});
+
+export default app;

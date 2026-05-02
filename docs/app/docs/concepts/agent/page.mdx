@@ -1,0 +1,260 @@
+---
+title: "Agent"
+description: "The fundamental building block of Better Agent."
+icon: bot
+sidebar:
+  folderIndexBehavior: "toggle"
+---
+
+# Agent
+
+An agent is a `defineAgent` config: name, model, instruction, tools, memory,
+access, output, and hooks.
+
+```typescript
+import { defineAgent } from "@better-agent/core";
+import { openai } from "@better-agent/openai";
+
+const agent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help resolve customer issues.",
+});
+```
+
+The `name` is a string literal type used to retrieve the agent with
+`app.agent("support")`.
+
+## Instruction
+
+Use a string for static behavior. Use a function for request-aware behavior.
+
+```typescript
+const agent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: (context) =>
+    `You are a support agent for ${context.company}. Speak ${context.language}.`,
+  contextSchema: z.object({
+    company: z.string(),
+    language: z.string(),
+  }),
+});
+```
+
+The function receives typed context and can be async.
+
+## Context schema
+
+`contextSchema` types the per-request context passed at runtime. The schema can
+be Zod, any
+[Standard Schema](https://github.com/standard-schema/standard-schema), or plain
+JSON Schema.
+
+```typescript
+const agent = defineAgent({
+  name: "analyst",
+  model: openai("gpt-5.5"),
+  contextSchema: z.object({
+    userId: z.string(),
+    plan: z.enum(["free", "pro", "enterprise"]),
+  }),
+  instruction: (ctx) =>
+    `The user is on the ${ctx.plan} plan. Adjust depth accordingly.`,
+});
+```
+
+The inferred type flows through instructions, tool `execute` calls, and hooks.
+Pass context when running the agent:
+
+```typescript
+await app.agent("analyst").run({
+  messages,
+  context: { userId: "usr_123", plan: "pro" },
+});
+```
+
+## Tools
+
+`tools` can include local `defineTool` tools, provider tool configs, or a tool
+source such as `mcpTools`.
+
+```typescript
+const agent = defineAgent({
+  name: "assistant",
+  model: openai("gpt-5.5"),
+  instruction: "You help users manage their account.",
+  tools: [cancelSubscription, updateProfile, stripeTools],
+});
+```
+
+Use `toolChoice` when the model must call a specific tool or mode:
+
+```typescript
+const agent = defineAgent({
+  name: "classifier",
+  model: openai("gpt-5.5"),
+  instruction: "Classify the incoming message.",
+  tools: [classifyTool],
+  toolChoice: { type: "tool", toolName: "classify" },
+});
+```
+
+See [Tools](/docs/concepts/tools) for tool types and approvals, and
+[MCP](/docs/concepts/mcp) for remote tool servers.
+
+## Memory
+
+Memory loads previous thread messages for an agent. Configure it per agent with
+`createMemory`, or set it at the app level.
+
+```typescript
+import { defineAgent, createMemory } from "@better-agent/core";
+
+const agent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help resolve customer issues.",
+  memory: createMemory({ lastMessages: 20 }),
+});
+```
+
+Set `memory: false` to opt an agent out of app-level memory.
+
+```typescript
+const stateless = defineAgent({
+  name: "classifier",
+  model: openai("gpt-5.5"),
+  instruction: "Classify the input.",
+  memory: false,
+});
+```
+
+Use `lastMessages` to limit loaded history. Use `scope` to isolate storage by
+tenant, user, or another derived key. See
+[Memory](/docs/concepts/memory) for setup.
+
+## Access control
+
+`access` controls who can invoke an agent over HTTP.
+
+| Value              | Behavior                                                 |
+| ------------------ | -------------------------------------------------------- |
+| `"public"`         | Anyone can call the agent.                               |
+| `"authenticated"`  | Requires a non-null auth context.                        |
+| `(ctx) => boolean` | Custom function receives `{ auth, agentName, request }`. |
+
+When the app has an `auth` resolver and the agent does not set `access`, it
+defaults to `"authenticated"`.
+
+```typescript
+const agent = defineAgent({
+  name: "admin-tools",
+  model: openai("gpt-5.5"),
+  instruction: "You perform admin operations.",
+  access: ({ auth }) => auth?.scopes?.includes("admin") ?? false,
+});
+```
+
+For app-level auth setup, see [Auth](/docs/concepts/auth).
+
+## Structured output
+
+`output.schema` validates the final response and exposes typed data on
+`result.structured`.
+
+```typescript
+const agent = defineAgent({
+  name: "extractor",
+  model: openai("gpt-5.5"),
+  instruction: "Extract structured data from the message.",
+  output: {
+    schema: z.object({
+      sentiment: z.enum(["positive", "negative", "neutral"]),
+      topics: z.array(z.string()),
+    }),
+  },
+});
+```
+
+See [Structured output](/docs/concepts/structured-output) for schema formats,
+runtime overrides, typing, and provider behavior.
+
+## Lifecycle hooks
+
+Hooks observe and control the runtime loop at the agent level.
+
+### onStep
+
+Runs before each model call. Use it to update messages, filter active tools, or
+patch state.
+
+```typescript
+const agent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help resolve customer issues.",
+  tools: [refundTool, lookupTool, escalateTool],
+  onStep({ stepIndex, setActiveTools }) {
+    if (stepIndex === 0) {
+      setActiveTools(["lookup"]);
+    }
+  },
+});
+```
+
+`setActiveTools` restricts which tools the model sees for that step. It does not
+remove them from the agent.
+
+Other loop controls:
+
+| Option         | Use                                                         |
+| -------------- | ----------------------------------------------------------- |
+| `onStepFinish` | Observe each step result, token usage, and tool call count. |
+| `onState`      | React to `state.set()` and `state.patch()`.                 |
+| `stopWhen`     | Stop early when a predicate returns `true`.                 |
+| `maxSteps`     | Set a hard ceiling on loop iterations.                      |
+
+```typescript
+const agent = defineAgent({
+  name: "researcher",
+  model: openai("gpt-5.5"),
+  instruction: "Research the topic thoroughly.",
+  maxSteps: 10,
+});
+```
+
+For streamed runtime events, see [Events](/docs/concepts/events).
+
+## Running an agent
+
+Register agents in a `betterAgent` app, then call `.run()` or `.stream()` on the
+handle. See [Client](/docs/concepts/client) for browser usage.
+
+```typescript
+import { betterAgent } from "@better-agent/core";
+
+const app = betterAgent({ agents: [agent] });
+
+const result = await app.agent("support").run({
+  messages: [{ role: "user", content: "I need a refund." }],
+});
+
+const stream = await app.agent("support").stream({
+  messages: [{ role: "user", content: "I need a refund." }],
+});
+
+for await (const event of stream.events) {
+  console.log(event.type);
+}
+```
+
+`.run()` returns a `RunResult`. `.stream()` returns events and a `final`
+promise that resolves to a `RunResult`. Interrupted runs can be resumed. See
+[Human in the Loop](/docs/concepts/hil).
+
+## Type inference
+
+Agent names, context, tools, hooks, and output are inferred from the definition.
+`app.agent("name")` returns a typed handle. See
+[TypeScript](/docs/concepts/typescript) for the broader typing model.

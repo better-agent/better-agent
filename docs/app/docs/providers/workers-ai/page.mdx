@@ -1,0 +1,150 @@
+---
+title: "Workers AI"
+description: "Use Cloudflare Workers AI models."
+icon: cloudflare
+---
+
+# Workers AI
+
+## Install
+
+```bash
+npm install @better-agent/workers-ai
+```
+
+## Agent model
+
+```typescript
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { createWorkersAI } from "@better-agent/workers-ai";
+
+type Env = {
+  AI: Ai;
+};
+
+export default {
+  async fetch(_request: Request, env: Env): Promise<Response> {
+    const workersAI = createWorkersAI({
+      binding: env.AI,
+    });
+
+    const supportAgent = defineAgent({
+      name: "support",
+      model: workersAI("@cf/moonshotai/kimi-k2.5"),
+      instruction: "You help customers.",
+    });
+
+    const app = betterAgent({ agents: [supportAgent] });
+
+    return app.handler(_request);
+  },
+} satisfies ExportedHandler<Env>;
+```
+
+Configure the binding in Wrangler:
+
+```toml
+[ai]
+binding = "AI"
+```
+
+## Configure
+
+Inside Cloudflare Workers, the binding is recommended and needs no API key.
+Outside Workers, use API credentials from environment variables.
+
+```typescript
+const workersAI = createWorkersAI({
+  accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+  apiKey: process.env.CLOUDFLARE_API_TOKEN,
+});
+```
+
+Route calls through AI Gateway when you want Cloudflare caching, rate limits, or
+observability.
+
+```typescript
+const workersAI = createWorkersAI({
+  binding: env.AI,
+  gateway: { id: "my-gateway" },
+});
+```
+
+## Hosted tools
+
+Workers AI does not expose a hosted `tools` helper on this provider wrapper. Use
+Better Agent tools for server tools, client tools, approvals, and MCP.
+
+## Direct generation
+
+Use generation models when a tool needs a focused model call without running an
+agent.
+
+```typescript
+const text = workersAI.text("@cf/moonshotai/kimi-k2.5");
+
+const normalize = defineTool({
+  name: "normalize_text",
+  description: "Normalize customer text before saving it.",
+  inputSchema: z.object({
+    content: z.string(),
+  }),
+  execute: async ({ content }) => {
+    const result = await text.generate({
+      input: `Clean up grammar without changing meaning:\n\n${content}`,
+    });
+
+    return { content: result.text };
+  },
+});
+```
+
+Other generation helpers:
+
+```typescript
+const embedding = workersAI.embedding("@cf/baai/bge-base-en-v1.5");
+const image = workersAI.image("@cf/black-forest-labs/flux-1-schnell");
+const speech = workersAI.speech("@cf/myshell-ai/melotts");
+const transcription = workersAI.transcription("@cf/openai/whisper-large-v3-turbo");
+```
+
+## Model types
+
+`workersAI("@cf/moonshotai/kimi-k2.5")` is an agent model for
+`defineAgent`. Agent models need text for messages, tool decisions, and
+streaming. They can support more than text depending on the model.
+
+`workersAI.text(...)`, `workersAI.embedding(...)`, and the other helpers are
+generation models for direct calls from app code or tools. They do not run the
+agent loop.
+
+## Provider options
+
+Pass Workers AI options at run time with the `workers-ai` provider key.
+
+```typescript
+await app.agent("support").run({
+  messages,
+  providerOptions: {
+    "workers-ai": {
+      reasoning_effort: "low",
+    },
+  },
+});
+```
+
+## Capabilities
+
+| Feature           | Support           |
+| ----------------- | ----------------- |
+| Agent model       | Yes               |
+| Text generation   | Yes               |
+| Streaming         | Yes               |
+| Structured output | Yes               |
+| Hosted tools      | No wrapper helper |
+| Embeddings        | Yes               |
+| Images            | Yes               |
+| Speech            | Yes               |
+| Transcription     | Yes               |
+
+Source: built on [`workers-ai-provider`](https://www.npmjs.com/package/workers-ai-provider).

@@ -61,8 +61,8 @@ export default function InstallTerminal() {
                         <button
                             className={`inline-flex min-w-[2.9rem] cursor-pointer items-center gap-[0.36rem] px-[0.46rem] py-[0.24rem] font-mono text-[9.4px] uppercase tracking-[0.045em] transition-colors sm:min-w-[3.36rem] sm:px-[0.6rem] sm:text-[10.5px] ${
                                 isActive
-                                    ? "bg-[var(--terminal-shell-elevated)] text-[color:var(--foreground)]"
-                                    : "text-[color:var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[color:var(--foreground)]"
+                                    ? "bg-[var(--terminal-shell-elevated)] text-[color:color-mix(in_srgb,var(--foreground)_82%,transparent)]"
+                                    : "text-[color:var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[color:color-mix(in_srgb,var(--foreground)_78%,transparent)]"
                             }`}
                             key={pm}
                             onClick={() => setActivePm(pm)}
@@ -83,7 +83,7 @@ export default function InstallTerminal() {
                 <div className="flex items-center justify-between gap-[0.4rem] px-[0.7rem] py-[0.46rem]">
                     <div className="min-w-0 flex-1 overflow-x-auto">
                         <code className="flex min-w-max items-center gap-[0.36rem] font-mono text-[8.4px] leading-none uppercase tracking-[0.028em] sm:text-[9.4px]">
-                            <span className="shrink-0 whitespace-nowrap text-[color:color-mix(in_srgb,var(--foreground)_92%,transparent)]">
+                            <span className="shrink-0 whitespace-nowrap text-[color:color-mix(in_srgb,var(--foreground)_78%,transparent)]">
                                 &gt;_
                             </span>
                             <span className="shrink-0 text-[var(--syntax-identifier)]">
@@ -102,7 +102,7 @@ export default function InstallTerminal() {
                     <div className="flex shrink-0 items-center gap-[0.24rem]">
                         <Link
                             aria-label="npm"
-                            className="inline-flex h-[1.18rem] w-[1.18rem] items-center justify-center rounded-[4px] text-[color:var(--muted-foreground)] transition-colors hover:bg-[var(--accent)] hover:text-[color:var(--foreground)]"
+                            className="inline-flex h-[1.18rem] w-[1.18rem] items-center justify-center rounded-[4px] text-[color:var(--muted-foreground)] transition-colors hover:bg-[var(--accent)] hover:text-[color:color-mix(in_srgb,var(--foreground)_78%,transparent)]"
                             href="https://www.npmjs.com/package/create-better-agent"
                         >
                             <BrandIcon
@@ -113,7 +113,7 @@ export default function InstallTerminal() {
                         </Link>
                         <Link
                             aria-label="GitHub"
-                            className="inline-flex h-[1.18rem] w-[1.18rem] items-center justify-center rounded-[4px] text-[color:var(--muted-foreground)] transition-colors hover:bg-[var(--accent)] hover:text-[color:var(--foreground)]"
+                            className="inline-flex h-[1.18rem] w-[1.18rem] items-center justify-center rounded-[4px] text-[color:var(--muted-foreground)] transition-colors hover:bg-[var(--accent)] hover:text-[color:color-mix(in_srgb,var(--foreground)_78%,transparent)]"
                             href="https://github.com/better-agent/better-agent"
                         >
                             <BrandIcon

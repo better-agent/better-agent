@@ -1,5 +1,5 @@
-/** Configuration for `loggingPlugin`. */
-export type LoggingPluginConfig = {
+/** Configuration for `logging`. */
+export type LoggingConfig = {
     /** Plugin id. */
     id?: string;
     /** Minimum log level. */
@@ -27,8 +27,6 @@ export type LoggingPluginConfig = {
         modelCalls?: boolean;
         /** Logs tool calls. */
         toolCalls?: boolean;
-        /** Logs persistence saves. */
-        saves?: boolean;
         /** Logs error events. */
         errors?: boolean;
     };
@@ -39,13 +37,13 @@ export type LoggingPluginConfig = {
         /** Raw body value. */
         body: unknown;
         /** Logging phase. */
-        phase: "request" | "response" | "tool_args" | "tool_result" | "save";
+        phase: "request" | "response" | "tool_args" | "tool_result";
     }) => unknown;
     /** Formats one log entry. */
     format?: (entry: LogEntry) => unknown;
 };
 
-/** Structured log entry emitted by `loggingPlugin`. */
+/** Structured log entry emitted by `logging`. */
 export type LogEntry = {
     /** Log level. */
     level: "debug" | "info" | "warn" | "error";
@@ -57,8 +55,7 @@ export type LogEntry = {
         | "model.before"
         | "model.after"
         | "tool.before"
-        | "tool.after"
-        | "save.before";
+        | "tool.after";
     /** ISO timestamp. */
     timestamp: string;
     /** Agent name. */

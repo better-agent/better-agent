@@ -1,0 +1,183 @@
+---
+title: "Nuxt"
+description: "Use Better Agent with Nuxt."
+icon: nuxt
+---
+
+# Nuxt
+
+Use Better Agent in Nuxt with a server route and the Vue `useAgent` hook.
+
+## Server
+
+```typescript
+// lib/better-agent/server.ts
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { openai } from "@better-agent/openai";
+
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help customers.",
+});
+
+const app = betterAgent({
+  agents: [supportAgent],
+  basePath: "/api/agents",
+});
+
+export default app;
+```
+
+## Route
+
+```typescript
+// server/api/agents/[...path].ts
+import { defineEventHandler, toWebRequest } from "h3";
+import app from "~~/lib/better-agent/server";
+
+export default defineEventHandler((event) => app.handler(toWebRequest(event)));
+```
+
+## Client
+
+```typescript
+// lib/better-agent/client.ts
+import { createClient } from "@better-agent/client";
+import type app from "./server";
+
+export const client = createClient<typeof app>({
+  baseURL: "/api/agents",
+});
+```
+
+## Basic chat
+
+```vue
+<script setup lang="ts">
+import { useAgent } from "@better-agent/client/vue";
+import { ref } from "vue";
+import { client } from "~~/lib/better-agent/client";
+
+const input = ref("");
+const agent = useAgent(client.agent("support"), {
+  threadId: "main",
+});
+
+async function send() {
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = "";
+  await agent.sendMessage(message);
+}
+</script>
+
+<template>
+  <form @submit.prevent="send">
+    <p v-for="message in agent.messages.value" :key="message.id">
+      {{ message.role }}
+    </p>
+    <p v-if="agent.error.value">{{ agent.error.value.message }}</p>
+    <input v-model="input" />
+    <button :disabled="agent.isRunning.value">Send</button>
+    <button type="button" :disabled="!agent.isRunning.value" @click="agent.stop()">
+      Stop
+    </button>
+  </form>
+</template>
+```
+
+## Threads
+
+```vue
+<script setup lang="ts">
+const agent = useAgent(client.agent("support"), {
+  threadId: "customer-123",
+});
+
+async function switchThread() {
+  await agent.loadMessages();
+  await agent.selectThread("customer-456");
+}
+</script>
+```
+
+## Context
+
+```vue
+<script setup lang="ts">
+const agent = useAgent(client.agent("support"), {
+  context: {
+    workspaceId: "workspace_123",
+  },
+});
+</script>
+```
+
+## Client tools
+
+```vue
+<script setup lang="ts">
+const agent = useAgent(client.agent("support"), {
+  toolHandlers: {
+    confirm_address: async (input) => {
+      const confirmed = window.confirm(input.address);
+      return { confirmed };
+    },
+  },
+});
+</script>
+```
+
+## Approvals
+
+```vue
+<template>
+  <div v-for="approval in agent.pendingToolApprovals.value" :key="approval.interruptId">
+    <p>{{ approval.toolName }}</p>
+    <button @click="agent.approveToolCall(approval.interruptId)">
+      Approve
+    </button>
+    <button @click="agent.rejectToolCall(approval.interruptId)">
+      Reject
+    </button>
+  </div>
+</template>
+```
+
+## Events
+
+```vue
+<script setup lang="ts">
+import { EventType } from "@better-agent/core";
+
+const agent = useAgent(client.agent("support"), {
+  onEvent(event) {
+    if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
+      console.log(event.delta);
+    }
+  },
+});
+</script>
+```
+
+## Finish and errors
+
+```vue
+<script setup lang="ts">
+const agent = useAgent(client.agent("support"), {
+  onFinish(finish) {
+    console.log(finish.runId, finish.isInterrupted);
+  },
+  onError(error) {
+    console.error(error.code, error.message);
+  },
+});
+</script>
+```
+
+## Next
+
+See [Client](/docs/concepts/client), [Tools](/docs/concepts/tools),
+[Human in the Loop](/docs/concepts/hil), [Memory](/docs/concepts/memory),
+[Events](/docs/concepts/events), and [Storage](/docs/concepts/storage).

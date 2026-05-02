@@ -2,8 +2,8 @@ import type { Plugin } from "@better-agent/core";
 import { parseAllowEntry } from "./cidr";
 import { normalizeIp, parseIp } from "./ip";
 import { createIpDeniedResponse } from "./responses";
-import type { IpAllowlistPluginConfig } from "./types";
-import { validateIpAllowlistPluginConfig } from "./validate";
+import type { IpAllowlistConfig } from "./types";
+import { validateIpAllowlistConfig } from "./validate";
 
 /** Reads the first valid forwarded IP. */
 function getProxyIp(request: Request): string | null {
@@ -46,13 +46,13 @@ function getDirectIp(request: Request): string | null {
  *
  * @example
  * ```ts
- * const plugin = ipAllowlistPlugin({
+ * const plugin = ipAllowlist({
  *   allow: ["127.0.0.1", "10.0.0.0/8"],
  * });
  * ```
  */
-export const ipAllowlistPlugin = (config: IpAllowlistPluginConfig): Plugin => {
-    validateIpAllowlistPluginConfig(config);
+export const ipAllowlist = (config: IpAllowlistConfig): Plugin => {
+    validateIpAllowlistConfig(config);
 
     const matchers = config.allow.map((entry) => {
         const matcher = parseAllowEntry(entry);
@@ -69,7 +69,6 @@ export const ipAllowlistPlugin = (config: IpAllowlistPluginConfig): Plugin => {
                 const resolvedIp = config.getIp
                     ? await config.getIp({
                           agentName: ctx.agentName,
-                          mode: ctx.mode,
                           request: ctx.request,
                       })
                     : config.trustProxy
@@ -90,7 +89,6 @@ export const ipAllowlistPlugin = (config: IpAllowlistPluginConfig): Plugin => {
                     ? await config.onDenied({
                           ip: normalizedIp,
                           agentName: ctx.agentName,
-                          mode: ctx.mode,
                           request: ctx.request,
                       })
                     : createIpDeniedResponse();

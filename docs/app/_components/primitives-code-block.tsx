@@ -1,33 +1,41 @@
-import { ServerCodeBlock } from "fumadocs-ui/components/codeblock.rsc";
+import { codeToHtml } from "shiki";
 
 type PrimitivesCodeBlockProps = {
     code: string;
     filename: string;
-    language?: "ts" | "tsx" | "js" | "jsx" | "json" | "bash" | "sh" | "text";
 };
 
-export default async function PrimitivesCodeBlock({
-    code,
-    filename: _filename,
-    language = "ts",
-}: PrimitivesCodeBlockProps) {
+export default async function PrimitivesCodeBlock({ code, filename }: PrimitivesCodeBlockProps) {
+    const html = await codeToHtml(code, {
+        lang: "ts",
+        themes: {
+            light: "github-light",
+            dark: "github-dark",
+        },
+        defaultColor: false,
+        cssVariablePrefix: "--shiki-",
+    });
+
     return (
-        <ServerCodeBlock
-            code={code}
-            lang={language}
-            themes={{
-                light: "one-light",
-                dark: "one-dark-pro",
-            }}
-            codeblock={{
-                allowCopy: true,
-                className:
-                    "my-0 rounded-none border border-t-0 border-[color:var(--border)] bg-white text-[11.5px] dark:bg-[var(--panel)] sm:text-[12px]",
-                viewportProps: {
-                    className:
-                        "bg-white pt-4 opacity-88 dark:bg-[var(--panel)] sm:[&_pre]:text-[12px] [&_pre]:text-[11.5px] [&_.shiki]:opacity-88",
-                },
-            }}
-        />
+        <div
+            className="code-demo-pane my-0 flex h-[22rem] max-h-[22rem] flex-col overflow-hidden border border-[color:var(--border)] sm:h-[24rem] sm:max-h-[24rem]"
+            style={{ background: "var(--code-block-bg)" }}
+        >
+            <div
+                className="flex h-8 shrink-0 items-center border-b px-4"
+                style={{ borderColor: "var(--showcase-shell-border)" }}
+            >
+                <span
+                    className="text-[11px] tracking-[0.02em]"
+                    style={{ color: "var(--showcase-tab-idle)" }}
+                >
+                    {filename}
+                </span>
+            </div>
+            <div
+                className="primitives-shiki min-h-0 flex-1 overflow-auto pt-3 pr-4 pb-4 sm:pt-4 sm:pr-5 sm:pb-5"
+                dangerouslySetInnerHTML={{ __html: html }}
+            />
+        </div>
     );
 }

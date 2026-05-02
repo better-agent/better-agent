@@ -1,9 +1,9 @@
 import { requirePositiveNumber } from "../shared/validation";
-import type { RateLimitPluginConfig } from "./types";
+import type { RateLimitConfig } from "./types";
 
-/** Validates `rateLimitPlugin` configuration. */
-export function validateRateLimitPluginConfig(config: RateLimitPluginConfig): void {
-    requirePositiveNumber(config.windowMs, "windowMs", "plugins.rateLimitPlugin");
-    requirePositiveNumber(config.max, "max", "plugins.rateLimitPlugin");
-    requirePositiveNumber(config.casRetries ?? 8, "casRetries", "plugins.rateLimitPlugin");
+/** Validates `rateLimit` configuration. */
+export function validateRateLimitConfig(config: RateLimitConfig): void {
+    requirePositiveNumber(config.windowMs, "windowMs", "plugins.rateLimit");
+    requirePositiveNumber(config.max, "max", "plugins.rateLimit");
+    requirePositiveNumber(config.casRetries ?? 8, "casRetries", "plugins.rateLimit");
 }

@@ -1,0 +1,222 @@
+---
+title: "Human in the Loop"
+description: "Pause runs for human approval and user input."
+icon: users
+---
+
+# Human in the Loop
+
+Use human in the loop when an agent should pause before continuing. Common cases
+are approving a sensitive server tool or collecting input from the user's app.
+
+Better Agent represents these pauses as AG-UI interrupts. Interrupts have stable
+ids, so your UI can show a pending decision, keep it durable with the run, and
+resume later.
+
+## Require approval
+
+Add `approval` to a server tool when it needs a human decision before execution.
+
+```typescript
+import { defineTool } from "@better-agent/core";
+import { z } from "zod";
+
+const refundTool = defineTool({
+  name: "refund",
+  target: "server",
+  description: "Issue a refund.",
+  inputSchema: z.object({
+    orderId: z.string(),
+    amount: z.number(),
+  }),
+  approval: {
+    resolve: ({ toolInput }) => toolInput.amount > 50,
+  },
+  async execute({ orderId, amount }) {
+    return stripe.refunds.create({ payment_intent: orderId, amount });
+  },
+});
+```
+
+When the model calls `refund` for more than 50, the run pauses before
+`execute` runs. The raw interrupt includes an id, reason, tool call id, optional
+metadata, and any expiry. Client hooks turn that into a pending approval with
+the tool name and parsed input.
+
+```typescript
+const result = await app.agent("support").run({
+  threadId: "thread_123",
+  messages: [{ role: "user", content: "Refund order #123 for $200." }],
+});
+
+if (result.outcome === "interrupt") {
+  const approval = result.interrupts[0];
+  console.log(approval.id, approval.metadata);
+}
+```
+
+## Handle approvals in React
+
+The React hook exposes pending approvals and resumes automatically after you
+approve or reject them.
+
+```tsx
+import { useAgent } from "@better-agent/client/react";
+import { client } from "@/better-agent/client";
+
+function SupportChat() {
+  const agent = useAgent(client.agent("support"), {
+    threadId: "thread_123",
+  });
+
+  if (agent.pendingToolApprovals.length > 0) {
+    return (
+      <div>
+        {agent.pendingToolApprovals.map((approval) => (
+          <section key={approval.interruptId}>
+            <h3>Approve {approval.toolName}?</h3>
+            <pre>{JSON.stringify(approval.input, null, 2)}</pre>
+            <button onClick={() => agent.approveToolCall(approval.interruptId)}>
+              Approve
+            </button>
+            <button onClick={() => agent.rejectToolCall(approval.interruptId)}>
+              Deny
+            </button>
+          </section>
+        ))}
+      </div>
+    );
+  }
+
+  return <Chat messages={agent.messages} onSend={agent.sendMessage} />;
+}
+```
+
+If there are multiple pending approvals, answer each one. The hook continues
+the run when no undecided approvals remain.
+
+## Approve from the server
+
+Without the client hook, resume the same thread with a `resume` entry. Manual
+resume requires a `threadId` and [Storage](/docs/concepts/storage).
+
+```typescript
+const resumed = await app.agent("support").run({
+  threadId: "thread_123",
+  resume: [{
+    interruptId: result.interrupts[0].id,
+    status: "resolved",
+    payload: { approved: true },
+  }],
+});
+```
+
+Approving lets the tool execute. Denying sends a denied tool result back to the
+model so it can respond to the user.
+
+```typescript
+await app.agent("support").run({
+  threadId: "thread_123",
+  resume: [{
+    interruptId: result.interrupts[0].id,
+    status: "resolved",
+    payload: { approved: false },
+  }],
+});
+```
+
+Use `status: "cancelled"` when you want to cancel the pending action instead.
+
+```typescript
+resume: [{
+  interruptId: result.interrupts[0].id,
+  status: "cancelled",
+}]
+```
+
+## Approval metadata
+
+`resolve` can return metadata for your approval UI.
+
+```typescript
+approval: {
+  resolve: ({ toolInput, context }) => ({
+    enabled: toolInput.amount > 50,
+    metadata: {
+      policy: "refunds_over_50",
+      reviewerRole: context.role,
+    },
+  }),
+}
+```
+
+When the user answers, you can send response metadata too.
+
+```typescript
+await agent.approveToolCall(approval.interruptId, {
+  reviewerId: "usr_123",
+  note: "Customer is eligible.",
+});
+```
+
+## Timeouts
+
+Set a timeout when an approval should expire.
+
+```typescript
+const refundTool = defineTool({
+  name: "refund",
+  target: "server",
+  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
+  approval: { enabled: true },
+  interrupt: {
+    approval: { timeoutMs: 60_000 },
+  },
+  async execute({ orderId, amount }) {
+    return stripe.refunds.create({ payment_intent: orderId, amount });
+  },
+});
+```
+
+The interrupt includes `expiresAt`. Use it to render a countdown or hide stale
+approval actions.
+
+## Client tools
+
+Client tools are another kind of pause. They run in the user's app instead of
+on the server.
+
+```typescript
+const confirmAddress = defineTool({
+  name: "confirm_address",
+  target: "client",
+  description: "Ask the user to confirm their shipping address.",
+  inputSchema: z.object({
+    address: z.string(),
+    orderId: z.string(),
+  }),
+});
+```
+
+If a matching client handler is registered, the client resolves the tool
+automatically. If not, the UI can read `pendingClientTools` and render its own
+pending-tool UI. See [Tools](/docs/concepts/tools) for client tool examples.
+
+## How it works
+
+1. The model calls a tool.
+2. The runtime checks whether approval or client-side input is needed.
+3. If yes, the run returns with `outcome: "interrupt"`.
+4. Your UI or server resolves the interrupt.
+5. The run resumes from the same thread.
+
+Important fields:
+
+| Field | Use |
+| --- | --- |
+| `id` | The interrupt id. Pass it as `interruptId` when resuming. |
+| `reason` | Why the run paused, such as `tool_approval_pending`. |
+| `toolCallId` | The tool call that created the pause. |
+| `responseSchema` | The expected shape of the resume payload. |
+| `metadata` | Extra context for your UI. |
+| `expiresAt` | When the pending decision expires. |

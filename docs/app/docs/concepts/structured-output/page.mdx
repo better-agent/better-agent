@@ -1,0 +1,146 @@
+---
+title: "Structured Output"
+description: "Return validated data from an agent."
+icon: braces
+---
+
+# Structured Output
+
+Structured output tells the model to return data that matches a schema. Better
+Agent validates the final response and exposes it as `result.structured`.
+
+## Add an output schema
+
+Set `output.schema` on the agent.
+
+```typescript
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { openai } from "@better-agent/openai";
+import { z } from "zod";
+
+const extractor = defineAgent({
+  name: "extractor",
+  model: openai("gpt-5.5"),
+  instruction: "Extract structured data from the user's message.",
+  output: {
+    schema: z.object({
+      sentiment: z.enum(["positive", "negative", "neutral"]),
+      topics: z.array(z.string()),
+      urgency: z.number().min(1).max(5),
+    }),
+  },
+});
+
+const app = betterAgent({ agents: [extractor] });
+
+const result = await app.agent("extractor").run({
+  messages: [{ role: "user", content: "My order is 3 days late and I'm frustrated." }],
+});
+
+console.log(result.structured);
+// { sentiment: "negative", topics: ["shipping", "delay"], urgency: 4 }
+```
+
+The shape of `result.structured` is inferred from the schema.
+
+## Output config
+
+`output` accepts:
+
+| Field | Use |
+| --- | --- |
+| `schema` | The schema the final response must match. |
+| `name` | Optional schema name passed to the provider. |
+| `description` | Optional schema description passed to the provider. |
+
+```typescript
+output: {
+  name: "ticket_classification",
+  description: "Classify the support ticket.",
+  schema: z.object({
+    category: z.enum(["bug", "feature", "question"]),
+    summary: z.string(),
+  }),
+}
+```
+
+## Override per run
+
+Pass `output` to `.run()` or `.stream()` when one agent needs different result
+shapes for different requests.
+
+```typescript
+const result = await app.agent("extractor").run({
+  messages,
+  output: {
+    schema: z.object({
+      language: z.string(),
+      keywords: z.array(z.string()),
+    }),
+  },
+});
+```
+
+Run-level `output` overrides agent-level `output`.
+
+## Schema formats
+
+Schemas can be Zod, any
+[Standard Schema](https://github.com/standard-schema/standard-schema)
+compatible library, or plain JSON Schema.
+
+```typescript
+output: {
+  schema: {
+    type: "object",
+    properties: {
+      name: { type: "string" },
+      age: { type: "number" },
+      tags: { type: "array", items: { type: "string" } },
+    },
+    required: ["name", "age", "tags"],
+  } as const,
+}
+```
+
+Use `as const` with plain JSON Schema when you want narrower TypeScript types.
+
+## Validation
+
+Structured output requires a model that supports structured responses. If the
+model does not support them, the run fails before generation.
+
+After generation, Better Agent validates the final structured value:
+
+| Case | Result |
+| --- | --- |
+| No structured value returned | `VALIDATION_FAILED` |
+| Schema validation fails | `VALIDATION_FAILED` |
+| Schema validation passes | `result.structured` is returned |
+
+See [OpenAI](/docs/providers/openai) and [Vercel AI SDK](/docs/providers/ai-sdk)
+for provider-specific model capabilities.
+
+## With tools
+
+Structured output works with tools. The model can call tools during the run, and
+Better Agent validates only the final response.
+
+```typescript
+const researcher = defineAgent({
+  name: "researcher",
+  model: openai("gpt-5.5"),
+  instruction: "Research the topic and return a structured summary.",
+  tools: [searchTool, fetchTool],
+  output: {
+    schema: z.object({
+      title: z.string(),
+      summary: z.string(),
+      sources: z.array(z.object({
+        url: z.string(),
+        title: z.string(),
+      })),
+    }),
+  },
+});
+```

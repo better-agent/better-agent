@@ -1,0 +1,21 @@
+import tailwindcss from "@tailwindcss/vite";
+
+export default {
+  compatibilityDate: "2025-07-15",
+  css: ["~/assets/css/main.css"],
+  devtools: { enabled: true },
+  vite: {
+    optimizeDeps: {
+      include: [
+        "@vue/devtools-core",
+        "@vue/devtools-kit",
+        "@ag-ui/core",
+        "ajv",
+        "ajv/dist/2020.js",
+        "fast-json-patch",
+        "better-call",
+      ],
+    },
+    plugins: [tailwindcss()],
+  },
+};

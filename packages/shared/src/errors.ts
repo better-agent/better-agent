@@ -126,7 +126,7 @@ const isProblemDetailsLike = (value: unknown): value is BetterAgentProblemDetail
     );
 };
 
-const getCodeMeta = (code: string): ErrorCodeMeta => {
+export const getErrorCodeMeta = (code: string): ErrorCodeMeta => {
     const found = ERROR_CODE_META[code];
     if (found) return found;
     return {
@@ -137,9 +137,84 @@ const getCodeMeta = (code: string): ErrorCodeMeta => {
     };
 };
 
-const getDocsTypeUrl = (code: string): string => {
-    const meta = getCodeMeta(code);
+export const getErrorDocsTypeUrl = (code: string): string => {
+    const meta = getErrorCodeMeta(code);
     return `${ERROR_DOCS_BASE_URL}#${meta.slug}`;
+};
+
+export const toProblemDetails = (
+    error: BetterAgentError,
+    overrides: Partial<BetterAgentProblemDetails> = {},
+): BetterAgentProblemDetails => {
+    const out: BetterAgentProblemDetails = {
+        type: overrides.type ?? error.type,
+        title: overrides.title ?? error.title,
+        status: overrides.status ?? error.status,
+        detail: overrides.detail ?? error.message,
+        code: String(overrides.code ?? error.code),
+    };
+
+    const retryable = overrides.retryable ?? error.retryable;
+    if (retryable !== undefined) out.retryable = retryable;
+
+    const issues = overrides.issues ?? error.issues;
+    if (issues !== undefined) out.issues = issues;
+
+    const traceId = overrides.traceId ?? error.traceId;
+    if (traceId !== undefined) out.traceId = traceId;
+
+    const context = {
+        ...(error.context ?? {}),
+        ...(isRecord(overrides.context) ? overrides.context : {}),
+    };
+    if (Object.keys(context).length > 0) out.context = context;
+
+    const trace = overrides.trace ?? error.trace;
+    if (trace.length > 0) out.trace = trace;
+
+    return out;
+};
+
+export const toDebugErrorJSON = (error: BetterAgentError) => {
+    const debug = toProblemDetails(error) as BetterAgentProblemDetails & {
+        stack?: string;
+        cause?: unknown;
+    };
+
+    if (error.stack !== undefined) debug.stack = error.stack;
+    if (error.cause !== undefined) debug.cause = error.cause;
+
+    return debug;
+};
+
+export const fromProblemDetails = (
+    input: BetterAgentProblemDetails | Record<string, unknown>,
+    opts: Omit<WrapOptions, "code"> = {},
+): BetterAgentError => {
+    if (!isProblemDetailsLike(input)) {
+        return BetterAgentError.wrap({
+            err: input,
+            message: "Invalid problem details payload",
+            opts: {
+                ...opts,
+                code: "INTERNAL",
+            },
+        });
+    }
+
+    return new BetterAgentError(input.detail, {
+        code: input.code,
+        status: input.status,
+        title: input.title,
+        type: input.type,
+        retryable: input.retryable,
+        issues: input.issues,
+        context: input.context,
+        traceId: input.traceId,
+        trace: input.trace,
+        ...opts,
+        stackFrom: opts.stackFrom ?? fromProblemDetails,
+    });
 };
 
 /** Better Agent error type. */
@@ -164,11 +239,11 @@ export class BetterAgentError extends Error {
         Object.setPrototypeOf(this, new.target.prototype);
         this.name = "BetterAgentError";
 
-        const meta = getCodeMeta(opts.code);
+        const meta = getErrorCodeMeta(opts.code);
         this.code = opts.code;
         this.status = opts.status ?? meta.status;
         this.title = opts.title ?? meta.title;
-        this.type = opts.type ?? getDocsTypeUrl(opts.code);
+        this.type = opts.type ?? getErrorDocsTypeUrl(opts.code);
         this.retryable = opts.retryable ?? meta.retryable;
         if (opts.issues !== undefined) this.issues = opts.issues;
         if (opts.context !== undefined) this.context = opts.context;
@@ -192,51 +267,17 @@ export class BetterAgentError extends Error {
 
     /** Converts this error to problem details. */
     toProblem(overrides: Partial<BetterAgentProblemDetails> = {}): BetterAgentProblemDetails {
-        const out: BetterAgentProblemDetails = {
-            type: overrides.type ?? this.type,
-            title: overrides.title ?? this.title,
-            status: overrides.status ?? this.status,
-            detail: overrides.detail ?? this.message,
-            code: String(overrides.code ?? this.code),
-        };
-
-        const retryable = overrides.retryable ?? this.retryable;
-        if (retryable !== undefined) out.retryable = retryable;
-
-        const issues = overrides.issues ?? this.issues;
-        if (issues !== undefined) out.issues = issues;
-
-        const traceId = overrides.traceId ?? this.traceId;
-        if (traceId !== undefined) out.traceId = traceId;
-
-        const context = {
-            ...(this.context ?? {}),
-            ...(isRecord(overrides.context) ? overrides.context : {}),
-        };
-        if (Object.keys(context).length > 0) out.context = context;
-
-        const trace = overrides.trace ?? this.trace;
-        if (trace.length > 0) out.trace = trace;
-
-        return out;
+        return toProblemDetails(this, overrides);
     }
 
     /** JSON form for `JSON.stringify`. */
     toJSON() {
-        return this.toProblem();
+        return toProblemDetails(this);
     }
 
     /** Debug form with stack and cause. */
     toDebugJSON() {
-        const debug = this.toProblem() as BetterAgentProblemDetails & {
-            stack?: string;
-            cause?: unknown;
-        };
-
-        if (this.stack !== undefined) debug.stack = this.stack;
-        if (this.cause !== undefined) debug.cause = this.cause;
-
-        return debug;
+        return toDebugErrorJSON(this);
     }
 
     /** Creates an error from a code and message. */
@@ -257,27 +298,7 @@ export class BetterAgentError extends Error {
         input: BetterAgentProblemDetails | Record<string, unknown>,
         opts: Omit<WrapOptions, "code"> = {},
     ): BetterAgentError {
-        if (!isProblemDetailsLike(input)) {
-            return BetterAgentError.wrap({
-                err: input,
-                message: "Invalid problem details payload",
-                opts: {
-                    ...opts,
-                    code: "INTERNAL",
-                },
-            });
-        }
-
-        return new BetterAgentError(input.detail, {
-            code: input.code,
-            status: input.status,
-            title: input.title,
-            type: input.type,
-            retryable: input.retryable,
-            issues: input.issues,
-            context: input.context,
-            traceId: input.traceId,
-            trace: input.trace,
+        return fromProblemDetails(input, {
             ...opts,
             stackFrom: opts.stackFrom ?? BetterAgentError.fromProblem,
         });

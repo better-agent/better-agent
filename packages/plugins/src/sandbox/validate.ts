@@ -1,5 +1,5 @@
 import { createValidationError } from "../shared/validation";
-import type { SandboxCreateParams, SandboxPluginConfig } from "./types";
+import type { SandboxConfig, SandboxCreateParams } from "./types";
 
 const hasLifecycleValues = (lifecycle: SandboxCreateParams["lifecycle"] | undefined): boolean =>
     Boolean(
@@ -22,7 +22,7 @@ export function validateSandboxCreateParams(
         if (params.lifecycle?.ttlMs !== undefined) {
             throw createValidationError(
                 "`lifecycle.ttlMs` is not supported by the Daytona sandbox client. Use `startupTimeoutMs` for creation readiness and Daytona lifecycle fields like `idleStopMs`, `archiveAfterMs`, or `deleteAfterMs` instead.",
-                "plugins.sandboxPlugin.createConfig.lifecycle.ttlMs",
+                "plugins.sandbox.createConfig.lifecycle.ttlMs",
             );
         }
 
@@ -33,7 +33,7 @@ export function validateSandboxCreateParams(
         if (params.startupTimeoutMs !== undefined) {
             throw createValidationError(
                 "`startupTimeoutMs` is not supported by the E2B sandbox client. Use `lifecycle.ttlMs` to control sandbox lifetime.",
-                "plugins.sandboxPlugin.createConfig.startupTimeoutMs",
+                "plugins.sandbox.createConfig.startupTimeoutMs",
             );
         }
 
@@ -44,7 +44,7 @@ export function validateSandboxCreateParams(
         ) {
             throw createValidationError(
                 "`lifecycle.idleStopMs`, `lifecycle.archiveAfterMs`, and `lifecycle.deleteAfterMs` are not supported by the E2B sandbox client.",
-                "plugins.sandboxPlugin.createConfig.lifecycle",
+                "plugins.sandbox.createConfig.lifecycle",
             );
         }
 
@@ -56,21 +56,18 @@ export function validateSandboxCreateParams(
     }
 }
 
-/** Validates `sandboxPlugin` configuration. */
-export function validateSandboxPluginConfig(config: SandboxPluginConfig): void {
+/** Validates `sandbox` configuration. */
+export function validateSandboxConfig(config: SandboxConfig): void {
     const client = config.client;
 
     if (!client || typeof client !== "object") {
-        throw createValidationError(
-            "`sandboxPlugin` requires a `client`.",
-            "plugins.sandboxPlugin",
-        );
+        throw createValidationError("`sandbox` requires a `client`.", "plugins.sandbox");
     }
 
     if (config.prefix !== undefined && config.prefix.trim().length === 0) {
         throw createValidationError(
-            "`sandboxPlugin` requires `prefix` to be a non-empty string when provided.",
-            "plugins.sandboxPlugin",
+            "`sandbox` requires `prefix` to be a non-empty string when provided.",
+            "plugins.sandbox",
         );
     }
 

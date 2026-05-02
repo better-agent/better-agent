@@ -1,2 +1,2 @@
 export type * from "./types";
-export { rateLimitPlugin } from "./plugin";
+export { rateLimit } from "./plugin";

@@ -1,0 +1,97 @@
+---
+title: "Logging"
+description: "Structured runtime logging plugin."
+icon: filecode
+---
+
+# Logging
+
+Logging emits structured runtime logs for requests, events, steps, model calls,
+tool calls, and errors.
+
+## Basic usage
+
+```ts
+import { betterAgent } from "@better-agent/core";
+import { logging } from "@better-agent/plugins";
+
+export const app = betterAgent({
+  agents: [supportAgent],
+  plugins: [logging()],
+});
+```
+
+By default, logs go to the console, every logging group is enabled, and the
+minimum level is `info`.
+
+## Custom logger
+
+Use `logger` to send entries to your own logging system.
+
+```ts
+const plugin = logging({
+  logger: {
+    info: (entry) => myLogger.info(entry),
+    error: (entry) => myLogger.error(entry),
+  },
+});
+```
+
+## Include only what you need
+
+Use `include` to reduce noise.
+
+```ts
+const plugin = logging({
+  include: {
+    requests: true,
+    events: true,
+    steps: false,
+    modelCalls: false,
+    toolCalls: true,
+    errors: true,
+  },
+});
+```
+
+## Redact sensitive data
+
+Sensitive headers like `authorization`, `cookie`, `set-cookie`, and `x-api-key`
+are redacted by default. Add more headers with `redactHeaders`, or rewrite
+logged bodies with `redactBody`.
+
+```ts
+const plugin = logging({
+  redactHeaders: ["x-session-token"],
+  redactBody: ({ phase, body }) => {
+    if (phase === "tool_args" || phase === "tool_result") {
+      return { redacted: true };
+    }
+
+    return body;
+  },
+});
+```
+
+`redactBody` receives `phase` as `request`, `response`, `tool_args`, or
+`tool_result`.
+
+## Format output
+
+Use `format` to shape each log entry before it is written.
+
+```ts
+const plugin = logging({
+  format: (entry) => ({
+    level: entry.level,
+    message: entry.event,
+    runId: entry.runId,
+    data: entry.data,
+  }),
+});
+```
+
+## Levels
+
+Log levels are `debug`, `info`, `warn`, and `error`. Use `level: "debug"` to
+include debug-only entries like model and tool call details.

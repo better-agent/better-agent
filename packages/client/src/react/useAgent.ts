@@ -1,153 +1,102 @@
-import { useEffect, useReducer, useRef } from "react";
-import { AgentChatController } from "../core/controller";
-import {
-    cloneControllerOptions,
-    getLatestUserMessageId,
-    normalizeSendInput,
-} from "../framework-internals/utils";
-import type { BetterAgentClient } from "../types/client";
-import type { AgentNameFromApp } from "../types/client-type-helpers";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { createAgentController } from "../core/controller";
+import type { AgentNameOf } from "../core/inference";
+import type {
+    AgentControllerOptions,
+    BetterAgentClientAgentHandle,
+    BetterAgentClientAgentMemoryHandle,
+} from "../types";
 import type { UseAgentOptions, UseAgentResult } from "./types";
 
-/**
- * React hook for talking to one Better Agent conversation.
- *
- * Returns chat state and chat actions.
- *
- * @example
- * ```tsx
- * const agent = useAgent(client, {
- *   agent: "assistant",
- *   conversationId: "conv_123",
- * });
- *
- * await agent.sendMessage("Hello");
- *
- * console.log(agent.messages);
- * console.log(agent.status);
- * agent.stop();
- * ```
- *
- * @example
- * ```tsx
- * function Chat() {
- *   const agent = useAgent(client, { agent: "assistant" });
- *
- *   return (
- *     <div>
- *       {agent.messages.map((message) => (
- *         <div key={message.localId}>{message.role}</div>
- *       ))}
- *       <button onClick={() => agent.sendMessage("Hello")}>Send</button>
- *     </div>
- *   );
- * }
- * ```
- */
-export const useAgent = <
-    TApp = unknown,
-    TAgentName extends AgentNameFromApp<TApp> = AgentNameFromApp<TApp>,
->(
-    client: BetterAgentClient<TApp>,
-    options: UseAgentOptions<TApp, TAgentName>,
-): UseAgentResult<TApp, TAgentName> => {
-    const [, forceRender] = useReducer((count: number) => count + 1, 0);
-    const latestClientRef = useRef(client);
+export function useAgent<TApp = unknown, TName extends AgentNameOf<TApp> = AgentNameOf<TApp>>(
+    agent: BetterAgentClientAgentMemoryHandle<TApp, TName>,
+    options?: UseAgentOptions<TApp, TName>,
+): UseAgentResult<TApp, TName>;
+export function useAgent<TApp = unknown, TName extends AgentNameOf<TApp> = AgentNameOf<TApp>>(
+    agent: BetterAgentClientAgentHandle<TApp, TName>,
+    options?: UseAgentOptions<TApp, TName>,
+): UseAgentResult<TApp, TName>;
+export function useAgent<TApp = unknown, TName extends AgentNameOf<TApp> = AgentNameOf<TApp>>(
+    agent: BetterAgentClientAgentHandle<TApp, TName>,
+    options: UseAgentOptions<TApp, TName> = {},
+): UseAgentResult<TApp, TName> {
     const latestOptionsRef = useRef(options);
-    latestClientRef.current = client;
     latestOptionsRef.current = options;
 
-    const controllerRef = useRef<AgentChatController<TApp, TAgentName> | null>(null);
-    const ensureController = () => {
-        if (!controllerRef.current) {
-            controllerRef.current = new AgentChatController<TApp, TAgentName>(
-                latestClientRef.current,
-                cloneControllerOptions(latestOptionsRef.current),
-            );
-        }
+    const toolHandlers = useMemo<AgentControllerOptions<TApp, TName>["toolHandlers"]>(
+        () =>
+            new Proxy(
+                {},
+                {
+                    get(_target, key) {
+                        const handlers = latestOptionsRef.current.toolHandlers as
+                            | Record<PropertyKey, unknown>
+                            | undefined;
+                        return handlers?.[key];
+                    },
+                },
+            ) as AgentControllerOptions<TApp, TName>["toolHandlers"],
+        [],
+    );
 
-        return controllerRef.current;
-    };
-    const controller = ensureController();
+    const lifecycleHooks = useMemo<
+        Pick<AgentControllerOptions<TApp, TName>, "onEvent" | "onFinish" | "onError">
+    >(
+        () => ({
+            onEvent: (event) => latestOptionsRef.current.onEvent?.(event),
+            onFinish: (finish) => latestOptionsRef.current.onFinish?.(finish),
+            onError: (error) => latestOptionsRef.current.onError?.(error),
+        }),
+        [],
+    );
 
-    const getController = () => {
-        const current = ensureController();
-        current.updateClient(latestClientRef.current);
-        current.updateOptions(
-            cloneControllerOptions(latestOptionsRef.current) as UseAgentOptions<TApp, TAgentName>,
-        );
-        return current;
-    };
-
-    useEffect(() => {
-        controller.updateClient(latestClientRef.current);
-        controller.updateOptions(
-            cloneControllerOptions(latestOptionsRef.current) as UseAgentOptions<TApp, TAgentName>,
-        );
-    }, [controller]);
-
-    useEffect(() => {
-        return controller.subscribe(forceRender);
-    }, [controller]);
-
-    useEffect(() => {
-        controller.updateClient(latestClientRef.current);
-        controller.updateOptions(
-            cloneControllerOptions(latestOptionsRef.current) as UseAgentOptions<TApp, TAgentName>,
-        );
-        controller.init();
-
-        return () => {
-            controller.destroy();
-            if (controllerRef.current === controller) {
-                controllerRef.current = null;
-            }
+    const controller = useMemo(() => {
+        const controllerOptions: AgentControllerOptions<TApp, TName> = {
+            initialMessages: options.initialMessages,
+            initialState: options.initialState,
+            initialInterruptState: options.initialInterruptState,
+            resume: options.resume,
+            context: options.context,
+            threadId: options.threadId,
+            toolHandlers,
+            onEvent: lifecycleHooks.onEvent,
+            onFinish: lifecycleHooks.onFinish,
+            onError: lifecycleHooks.onError,
         };
+        return createAgentController<TApp, TName>(agent, controllerOptions);
+    }, [
+        agent,
+        options.initialMessages,
+        options.initialState,
+        options.initialInterruptState,
+        options.resume,
+        options.context,
+        options.threadId,
+        toolHandlers,
+        lifecycleHooks,
+    ]);
+
+    useEffect(() => {
+        controller.start();
     }, [controller]);
 
-    const snapshot = controller.getSnapshot();
+    const snapshot = useSyncExternalStore(
+        (listener) => controller.subscribe(listener),
+        () => controller.getSnapshot(),
+        () => controller.getSnapshot(),
+    );
 
     return {
-        id: snapshot.id,
-        messages: snapshot.messages,
-        status: snapshot.status,
-        error: snapshot.error,
-        streamId: snapshot.streamId,
-        runId: snapshot.runId,
-        conversationId: snapshot.conversationId,
-        isLoading: snapshot.isLoading,
-        isStreaming: snapshot.isStreaming,
-        pendingToolApprovals: snapshot.pendingToolApprovals,
-        sendMessage: (input, requestOptions) => {
-            return getController().sendMessage(normalizeSendInput(input), requestOptions);
-        },
-        regenerate: async () => {
-            const current = getController();
-            await current.retryMessage(getLatestUserMessageId(current));
-        },
-        retryMessage: (localId) => {
-            return getController().retryMessage(localId);
-        },
-        stop: () => {
-            getController().stop();
-        },
-        resumeStream: (resumeOptions) => {
-            return getController().resumeStream(resumeOptions);
-        },
-        resumeConversation: (resumeOptions) => {
-            return getController().resumeConversation(resumeOptions);
-        },
-        approveToolCall: (params) => {
-            return getController().approveToolCall(params);
-        },
-        clearError: () => {
-            getController().clearError();
-        },
-        reset: () => {
-            getController().reset();
-        },
-        setMessages: (input) => {
-            getController().setMessages(input);
-        },
+        ...snapshot,
+        sendMessage: (input, sendOptions) => controller.sendMessage(input, sendOptions),
+        stop: () => controller.stop(),
+        resume: (resume) => controller.resume(resume),
+        selectThread: (threadId) => controller.selectThread(threadId),
+        clearThread: () => controller.clearThread(),
+        loadMessages: (threadId) => controller.loadMessages(threadId),
+        approveToolCall: (interruptId, metadata) =>
+            controller.approveToolCall(interruptId, metadata),
+        rejectToolCall: (interruptId, metadata) => controller.rejectToolCall(interruptId, metadata),
+        setMessages: (messages) => controller.setMessages(messages),
     };
-};
+}

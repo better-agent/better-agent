@@ -102,7 +102,7 @@ function TerminalAnimation({ command, visible }: { command: string; visible: boo
     lines.push(
         <span
             key="cmd"
-            className="font-medium tracking-[-0.015em] text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)]"
+            className="font-[380] tracking-[-0.005em] text-[color:color-mix(in_srgb,var(--foreground)_68%,transparent)]"
         >
             {command.substring(0, tick)}
             {tick < timeCommandEnter && (
@@ -119,20 +119,19 @@ function TerminalAnimation({ command, visible }: { command: string; visible: boo
         lines.push(
             <Fragment key="response">
                 {tick > timeModeLabel && (
-                    <span className="font-medium text-[color:var(--foreground)]">◇ Mode</span>
+                    <span className="font-[380] text-[color:color-mix(in_srgb,var(--foreground)_82%,transparent)]">
+                        ◇ App name
+                    </span>
                 )}
                 {tick > timeModeOptions && (
-                    <>
-                        <span className={tick > timeModeSelected ? "" : "opacity-50"}>
-                            │ ● Create new app
-                        </span>
-                        <span className="opacity-50">│ ○ Patch existing app</span>
-                    </>
+                    <span className={tick > timeModeSelected ? "" : "opacity-50"}>
+                        │ support-agent
+                    </span>
                 )}
                 {tick > timeFrameworkLabel && (
                     <>
                         <span>│</span>
-                        <span className="font-medium text-[color:var(--foreground)]">
+                        <span className="font-[380] text-[color:color-mix(in_srgb,var(--foreground)_82%,transparent)]">
                             ◆ Framework
                         </span>
                     </>
@@ -148,14 +147,12 @@ function TerminalAnimation({ command, visible }: { command: string; visible: boo
                         <span className="opacity-50">│ ○ Nuxt</span>
                         <span className="opacity-50">│ ○ TanStack Start</span>
                         <span className="opacity-50">│ ○ SolidStart</span>
-                        <span className="opacity-50">│ ○ React Router</span>
-                        <span className="opacity-50">│ ○ Generic</span>
                     </>
                 )}
                 {tick > timeProvidersLabel && (
                     <>
                         <span>│</span>
-                        <span className="font-medium text-[color:var(--foreground)]">
+                        <span className="font-[380] text-[color:color-mix(in_srgb,var(--foreground)_82%,transparent)]">
                             ◆ Providers
                         </span>
                     </>
@@ -168,13 +165,15 @@ function TerminalAnimation({ command, visible }: { command: string; visible: boo
                         <span className={tick > timeProvidersSelected ? "" : "opacity-50"}>
                             │ ◼ Anthropic
                         </span>
+                        <span className="opacity-50">│ ◻ Gemini</span>
                         <span className="opacity-50">│ ◻ xAI</span>
+                        <span className="opacity-50">│ ◻ Ollama</span>
                     </>
                 )}
                 {tick > timePluginsLabel && (
                     <>
                         <span>│</span>
-                        <span className="font-medium text-[color:var(--foreground)]">
+                        <span className="font-[380] text-[color:color-mix(in_srgb,var(--foreground)_82%,transparent)]">
                             ◆ Plugins
                         </span>
                     </>
@@ -184,10 +183,9 @@ function TerminalAnimation({ command, visible }: { command: string; visible: boo
                         <span className={tick > timePluginsSelected ? "" : "opacity-50"}>
                             │ ◼ Rate Limit
                         </span>
-                        <span className="opacity-50">│ ◻ Auth</span>
-                        <span className="opacity-50">│ ◻ Sandbox</span>
                         <span className="opacity-50">│ ◻ IP Allowlist</span>
                         <span className="opacity-50">│ ◻ Logging</span>
+                        <span className="opacity-50">│ ◻ Sandbox</span>
                     </>
                 )}
             </Fragment>,
@@ -211,7 +209,7 @@ function TerminalAnimation({ command, visible }: { command: string; visible: boo
                     <p className="border-b border-[color:var(--showcase-shell-border)] px-3 py-1.5 text-[10.5px] text-[color:color-mix(in_srgb,var(--foreground)_45%,transparent)]">
                         localhost:3000
                     </p>
-                    <p className="px-3 py-1.5 text-[12px] font-medium text-[color:var(--foreground)]">
+                    <p className="px-3 py-1.5 text-[12px] font-[380] text-[color:color-mix(in_srgb,var(--foreground)_82%,transparent)]">
                         Agent server running
                     </p>
                 </div>
@@ -277,33 +275,37 @@ export default function CtaSection() {
             className="relative mx-auto w-full max-w-[76rem] px-5 pt-8 pb-8 sm:px-8 sm:pt-12 sm:pb-12"
             ref={sectionRef}
         >
-            <div className="relative overflow-hidden rounded-2xl p-4 md:p-8">
+            <div className="relative overflow-hidden rounded-2xl bg-black p-4 md:p-8">
                 <Image
                     alt=""
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 size-full object-cover object-top -z-1"
+                    className="pointer-events-none absolute inset-0 z-0 size-full object-cover object-top"
                     loading="eager"
                     src="/cta-bg.png"
                     fill
                     style={{
-                        filter: "hue-rotate(178deg) saturate(1.18) brightness(0.7) contrast(1.06)",
+                        filter: "grayscale(1) saturate(0) brightness(0.38) contrast(1.2)",
                     }}
+                />
+                <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 z-1 bg-[linear-gradient(180deg,rgba(0,0,0,0.12),rgba(0,0,0,0.62))]"
                 />
                 <div className="relative z-10 mx-auto w-full max-w-[700px] overflow-hidden rounded-xl border border-[color:rgba(255,255,255,0.1)] bg-[color:var(--background)] shadow-2xl">
                     <div className="flex items-center gap-2.5 border-b border-[color:var(--showcase-shell-border)] p-2.5 sm:gap-3 sm:p-3">
-                        <span className="shrink-0 rounded-md border-2 border-[color:color-mix(in_srgb,var(--code-token-fn)_50%,transparent)] px-2 py-0.5 font-mono text-[11px] font-bold tracking-[0.03em] text-[color:var(--code-token-fn)] uppercase">
+                        <span className="shrink-0 rounded-md border-2 border-[color:color-mix(in_srgb,var(--code-token-fn)_42%,transparent)] px-2 py-0.5 font-mono text-[11px] font-[420] tracking-[0.03em] text-[color:color-mix(in_srgb,var(--code-token-fn)_82%,transparent)] uppercase">
                             Try it out
                         </span>
                         <div
                             className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-lg border border-[color:var(--showcase-shell-border)] px-3 py-2"
                             style={{ background: "var(--showcase-code-bg)" }}
                         >
-                            <code className="min-w-0 flex-1 truncate font-mono text-[12px] font-medium tracking-[-0.015em] text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] sm:text-[13px]">
+                            <code className="min-w-0 flex-1 truncate font-mono text-[12px] font-[380] tracking-[-0.005em] text-[color:color-mix(in_srgb,var(--foreground)_68%,transparent)] sm:text-[13px]">
                                 {command}
                             </code>
                             <button
                                 aria-label={copied ? "Copied" : "Copy command"}
-                                className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md p-1 text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] transition-colors hover:bg-[var(--accent)] hover:text-[color:var(--foreground)]"
+                                className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md p-1 text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] transition-colors hover:bg-[var(--accent)] hover:text-[color:color-mix(in_srgb,var(--foreground)_78%,transparent)]"
                                 onClick={handleCopy}
                                 type="button"
                             >
@@ -330,7 +332,7 @@ export default function CtaSection() {
                                 <path d="M12 19h8" />
                                 <path d="m4 17 6-6-6-6" />
                             </svg>
-                            <span className="shrink-0 font-mono text-[11px] font-medium text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)]">
+                            <span className="shrink-0 font-mono text-[11px] font-[360] text-[color:color-mix(in_srgb,var(--foreground)_38%,transparent)]">
                                 Terminal
                             </span>
                             <div className="ml-auto inline-flex items-center overflow-hidden rounded-md border border-[color:var(--showcase-shell-border)]">
@@ -341,8 +343,8 @@ export default function CtaSection() {
                                         <button
                                             className={`inline-flex cursor-pointer items-center gap-1 px-2 py-1 font-mono text-[9.5px] uppercase tracking-[0.04em] transition-colors ${
                                                 isActive
-                                                    ? "bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[color:var(--foreground)]"
-                                                    : "text-[color:color-mix(in_srgb,var(--foreground)_36%,transparent)] hover:text-[color:var(--foreground)]"
+                                                    ? "bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_82%,transparent)]"
+                                                    : "text-[color:color-mix(in_srgb,var(--foreground)_36%,transparent)] hover:text-[color:color-mix(in_srgb,var(--foreground)_78%,transparent)]"
                                             }`}
                                             key={pm}
                                             onClick={() => setActivePm(pm)}

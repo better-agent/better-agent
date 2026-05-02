@@ -5,147 +5,281 @@ export const OG_IMAGE_SIZE = {
     height: 630,
 } as const;
 
-export const OG_IMAGE_CONTENT_TYPE = "image/png";
-
-type OgImageProps = {
-    eyebrowLeft: string;
-    eyebrowRight: string;
+type BuildOgImageUrlOptions = {
     title: string;
-    titleLines?: string[];
     description?: string;
-    command?: string;
-    descriptionMaxLength?: number;
+    eyebrow?: string;
+    variant?: "docs" | "home" | "changelog";
 };
 
-function trimText(value: string | undefined, max: number) {
-    if (!value) return undefined;
-    const normalized = value.replace(/\s+/g, " ").trim();
-    if (normalized.length <= max) return normalized;
-    return `${normalized.slice(0, Math.max(0, max - 1)).trimEnd()}...`;
+type CreateOgImageOptions = BuildOgImageUrlOptions;
+
+const SITE_URL = "https://better-agent.com";
+const DEFAULT_DESCRIPTION =
+    "A TypeScript framework for building typed, event-driven, framework-agnostic agent apps.";
+const sansRegularFont = fetch(
+    new URL("../node_modules/geist/dist/fonts/geist-sans/Geist-Regular.ttf", import.meta.url),
+).then((response) => response.arrayBuffer());
+const sansBoldFont = fetch(
+    new URL("../node_modules/geist/dist/fonts/geist-sans/Geist-Bold.ttf", import.meta.url),
+).then((response) => response.arrayBuffer());
+const monoRegularFont = fetch(
+    new URL("../node_modules/geist/dist/fonts/geist-mono/GeistMono-Regular.ttf", import.meta.url),
+).then((response) => response.arrayBuffer());
+
+async function getOgFonts() {
+    const [sansRegular, sansBold, monoRegular] = await Promise.all([
+        sansRegularFont,
+        sansBoldFont,
+        monoRegularFont,
+    ]);
+
+    return [
+        {
+            name: "Geist",
+            data: sansRegular,
+            style: "normal" as const,
+            weight: 400 as const,
+        },
+        {
+            name: "Geist",
+            data: sansBold,
+            style: "normal" as const,
+            weight: 700 as const,
+        },
+        {
+            name: "Geist Mono",
+            data: monoRegular,
+            style: "normal" as const,
+            weight: 400 as const,
+        },
+    ];
+}
+
+function normalizeText(value: string | undefined, fallback: string, maxLength: number) {
+    const normalized = (value ?? "").replace(/\s+/g, " ").trim() || fallback;
+
+    if (normalized.length <= maxLength) {
+        return normalized;
+    }
+
+    return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
 function getTitleFontSize(title: string) {
-    const words = title.split(/\s+/).filter(Boolean);
-    const longestWord = words.reduce((max, word) => Math.max(max, word.length), 0);
-    const hasHyphen = title.includes("-");
-    const isDenseShortTitle =
-        title.length > 18 && (words.length >= 4 || longestWord >= 12 || hasHyphen);
-
-    if (title.length > 58) return 50;
-    if (title.length > 42) return 56;
-    if (title.length > 28) return 64;
-    if (title.length > 18) return 82;
-    if (isDenseShortTitle) return 88;
-    return 104;
+    if (title.length > 62) return 46;
+    if (title.length > 44) return 52;
+    if (title.length > 28) return 60;
+    return 70;
 }
 
-function getDescriptionFontSize(description: string | undefined) {
-    if (!description) return 0;
-    if (description.length > 110) return 26;
-    return 32;
-}
-
-function splitTitleForOg(title: string) {
-    const normalized = title.replace(/\s+/g, " ").trim();
-    if (!normalized) return [title];
-
-    const words = normalized.split(" ");
-    const longestWord = words.reduce((max, word) => Math.max(max, word.length), 0);
-    const shouldSplit =
-        words.length >= 4 &&
-        (normalized.length > 24 || normalized.includes("-") || longestWord >= 12);
-
-    if (!shouldSplit) return [normalized];
-    if (words.length === 3) return [`${words[0]} ${words[1]}`, words[2]];
-    if (words.length === 4) return [`${words[0]} ${words[1]}`, `${words[2]} ${words[3]}`];
-
-    const midpoint = Math.ceil(words.length / 2);
-    return [words.slice(0, midpoint).join(" "), words.slice(midpoint).join(" ")];
-}
-
-export function createOgImageResponse({
-    eyebrowLeft,
-    eyebrowRight,
+export function buildOgImageUrl({
     title,
-    titleLines,
     description,
-    command,
-    descriptionMaxLength = 180,
-}: OgImageProps) {
-    const safeTitle = trimText(title, 72) ?? "Better Agent";
-    const autoTitleLines = titleLines ? [] : splitTitleForOg(safeTitle);
-    const safeTitleLines =
-        (titleLines ?? autoTitleLines).map((line) => trimText(line, 36) ?? "").filter(Boolean) ??
-        [];
-    const safeDescription = trimText(description, descriptionMaxLength);
-    const hasExplicitTitleLines = safeTitleLines.length > 0;
-    const effectiveTitle = hasExplicitTitleLines ? safeTitleLines.join(" ") : safeTitle;
-    const renderedTitle = hasExplicitTitleLines ? safeTitleLines.join("\n") : safeTitle;
-    const titleFontSize = hasExplicitTitleLines ? 62 : getTitleFontSize(effectiveTitle);
-    const descriptionFontSize = getDescriptionFontSize(safeDescription);
-    const wordCount = effectiveTitle.split(/\s+/).filter(Boolean).length;
-    const longestWord = effectiveTitle
-        .split(/\s+/)
-        .filter(Boolean)
-        .reduce((max, word) => Math.max(max, word.length), 0);
-    const isVeryLongTitle = !hasExplicitTitleLines && effectiveTitle.length > 42;
-    const isLongTitle = !hasExplicitTitleLines && !isVeryLongTitle && effectiveTitle.length > 28;
-    const isMediumTitle =
-        !hasExplicitTitleLines &&
-        !isVeryLongTitle &&
-        !isLongTitle &&
-        wordCount >= 3 &&
-        effectiveTitle.length > 18;
-    const isDenseTitle =
-        !hasExplicitTitleLines &&
-        !isVeryLongTitle &&
-        (effectiveTitle.includes("-") ||
-            longestWord >= 10 ||
-            (wordCount >= 3 && effectiveTitle.length > 14));
-    const titleMaxWidth = hasExplicitTitleLines
-        ? 720
-        : isVeryLongTitle
-          ? 620
-          : isLongTitle
-            ? 700
-            : isDenseTitle
-              ? 760
-              : isMediumTitle
-                ? 820
-                : 860;
-    const titleLineHeight = hasExplicitTitleLines
-        ? 1.06
-        : isVeryLongTitle
-          ? 1.04
-          : isLongTitle
-            ? 1.02
-            : isDenseTitle
-              ? 0.96
-              : isMediumTitle
-                ? 0.96
-                : 0.9;
-    const titleLetterSpacing = hasExplicitTitleLines
-        ? "-0.05em"
-        : isVeryLongTitle
-          ? "-0.045em"
-          : isLongTitle
-            ? "-0.05em"
-            : isDenseTitle
-              ? "-0.055em"
-              : isMediumTitle
-                ? "-0.065em"
-                : "-0.085em";
-    const descriptionMarginTop = hasExplicitTitleLines
-        ? 34
-        : isVeryLongTitle
-          ? 24
-          : isLongTitle
-            ? 28
-            : isDenseTitle
-              ? 34
-              : isMediumTitle
-                ? 34
-                : 46;
+    eyebrow = "Docs",
+    variant = "docs",
+}: BuildOgImageUrlOptions) {
+    const params = new URLSearchParams();
+    params.set("variant", variant);
+    params.set("title", title);
+    params.set("eyebrow", eyebrow);
+
+    if (description) {
+        params.set("description", description);
+    }
+
+    return `${SITE_URL}/api/og?${params.toString()}`;
+}
+
+export async function createOgImageResponse({
+    title,
+    description,
+    eyebrow = "Docs",
+    variant = "docs",
+}: CreateOgImageOptions) {
+    const fonts = await getOgFonts();
+
+    if (variant === "home" || variant === "changelog") {
+        const isChangelog = variant === "changelog";
+        const mainTitle = isChangelog ? "Changelog" : "Better Agent";
+        const tagline = isChangelog
+            ? "Every improvement, fix, and feature we ship."
+            : "The better way to build AI agents.";
+        const command = isChangelog
+            ? "github.com/better-agent/better-agent/releases"
+            : "npm create better-agent";
+        const headerRight = isChangelog
+            ? "RELEASES AND PRODUCT UPDATES"
+            : "TYPESCRIPT FRAMEWORK FOR AI AGENTS";
+        const footer = isChangelog ? "BETTER-AGENT.COM/CHANGELOG" : "BETTER-AGENT.COM";
+
+        return new ImageResponse(
+            <div
+                style={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    position: "relative",
+                    overflow: "hidden",
+                    backgroundColor: "#050505",
+                    color: "#f7f7f3",
+                    fontFamily: '"Geist", "Inter", "Helvetica Neue", Arial, sans-serif',
+                }}
+            >
+                <div
+                    style={{
+                        position: "absolute",
+                        inset: 38,
+                        display: "flex",
+                        border: "1px solid rgba(255,255,255,0.18)",
+                    }}
+                />
+                <div
+                    style={{
+                        position: "absolute",
+                        top: 104,
+                        left: 38,
+                        right: 38,
+                        height: 1,
+                        display: "flex",
+                        backgroundColor: "rgba(255,255,255,0.18)",
+                    }}
+                />
+                <div
+                    style={{
+                        position: "absolute",
+                        bottom: 82,
+                        left: 38,
+                        right: 38,
+                        height: 1,
+                        display: "flex",
+                        backgroundColor: "rgba(255,255,255,0.14)",
+                    }}
+                />
+
+                <div
+                    style={{
+                        position: "absolute",
+                        top: 56,
+                        left: 86,
+                        right: 86,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                    }}
+                >
+                    <span
+                        style={{
+                            display: "flex",
+                            fontFamily:
+                                '"Geist Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+                            fontSize: 18,
+                            letterSpacing: 1,
+                            textTransform: "uppercase",
+                            color: "rgba(247,247,243,0.74)",
+                        }}
+                    >
+                        BETTER-AGENT.
+                    </span>
+                    <span
+                        style={{
+                            display: "flex",
+                            fontFamily:
+                                '"Geist Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+                            fontSize: 14,
+                            letterSpacing: 1,
+                            textTransform: "uppercase",
+                            color: "rgba(247,247,243,0.6)",
+                        }}
+                    >
+                        {headerRight}
+                    </span>
+                </div>
+
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "flex-start",
+                        padding: "218px 136px 0",
+                        width: "100%",
+                        position: "relative",
+                    }}
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            fontSize: 86,
+                            fontWeight: 500,
+                            lineHeight: 0.95,
+                            letterSpacing: -2.5,
+                            color: "#ffffff",
+                        }}
+                    >
+                        {mainTitle}
+                    </div>
+                    <div
+                        style={{
+                            display: "flex",
+                            marginTop: 22,
+                            fontFamily:
+                                '"Geist Mono", "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+                            fontSize: 24,
+                            lineHeight: 1.35,
+                            letterSpacing: -1.2,
+                            fontWeight: 400,
+                            color: "rgba(247,247,243,0.7)",
+                        }}
+                    >
+                        {tagline}
+                    </div>
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            marginTop: 26,
+                            fontFamily:
+                                '"Geist Mono", "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+                            fontSize: 22,
+                            lineHeight: 1,
+                            letterSpacing: -1,
+                            fontWeight: 400,
+                            color: "rgba(247,247,243,0.78)",
+                        }}
+                    >
+                        <span style={{ display: "flex", color: "rgba(247,247,243,0.42)" }}>
+                            {isChangelog ? ">" : "$"}
+                        </span>
+                        <span style={{ display: "flex", marginLeft: 14 }}>{command}</span>
+                    </div>
+                </div>
+                <div
+                    style={{
+                        position: "absolute",
+                        bottom: 48,
+                        left: 86,
+                        display: "flex",
+                        fontFamily: '"Geist Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+                        fontSize: 13,
+                        letterSpacing: 1,
+                        textTransform: "uppercase",
+                        color: "rgba(247,247,243,0.42)",
+                    }}
+                >
+                    {footer}
+                </div>
+            </div>,
+            {
+                ...OG_IMAGE_SIZE,
+                fonts,
+            },
+        );
+    }
+
+    const safeTitle = normalizeText(title, "Better Agent", 84);
+    const safeDescription = normalizeText(description, DEFAULT_DESCRIPTION, 170);
+    const titleFontSize = getTitleFontSize(safeTitle);
+    const eyebrowLabel = eyebrow.toLowerCase() === "docs" ? "BETTER AGENT" : eyebrow;
 
     return new ImageResponse(
         <div
@@ -153,154 +287,172 @@ export function createOgImageResponse({
                 width: "100%",
                 height: "100%",
                 display: "flex",
-                background: "#000000",
-                color: "#f5f3ee",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                position: "relative",
+                overflow: "hidden",
+                backgroundColor: "#050505",
+                color: "#f7f7f3",
             }}
         >
             <div
                 style={{
-                    width: "100%",
-                    height: "100%",
+                    position: "absolute",
+                    inset: 38,
                     display: "flex",
-                    padding: "38px 42px 42px",
-                    background: "#000000",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                }}
+            />
+            <div
+                style={{
+                    position: "absolute",
+                    top: 92,
+                    left: 38,
+                    right: 38,
+                    height: 1,
+                    display: "flex",
+                    backgroundColor: "rgba(255,255,255,0.12)",
+                }}
+            />
+            <div
+                style={{
+                    position: "absolute",
+                    bottom: 104,
+                    left: 38,
+                    right: 38,
+                    height: 1,
+                    display: "flex",
+                    backgroundColor: "rgba(255,255,255,0.12)",
+                }}
+            />
+
+            <div
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "52px 80px 0",
+                    position: "relative",
                 }}
             >
                 <div
                     style={{
-                        position: "relative",
-                        width: "100%",
-                        height: "100%",
                         display: "flex",
-                        flexDirection: "column",
-                        background: "#040404",
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        overflow: "hidden",
+                        width: 1,
+                        height: 22,
+                        backgroundColor: "rgba(255,255,255,0.45)",
+                    }}
+                />
+                <span
+                    style={{
+                        display: "flex",
+                        fontFamily: '"Geist Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+                        fontSize: 21,
+                        letterSpacing: 0,
+                        textTransform: "uppercase",
+                        color: "rgba(247,247,243,0.55)",
                     }}
                 >
-                    <div
-                        style={{
-                            width: "100%",
-                            minHeight: 94,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: "0 46px",
-                            borderBottom: "1px solid rgba(255,255,255,0.1)",
-                        }}
-                    >
-                        <div
-                            style={{
-                                display: "flex",
-                                fontFamily: "monospace",
-                                fontSize: 18,
-                                letterSpacing: "0.19em",
-                                color: "rgba(244,244,239,0.7)",
-                                textTransform: "uppercase",
-                            }}
-                        >
-                            {eyebrowLeft}
-                        </div>
-                        <div
-                            style={{
-                                display: "flex",
-                                fontFamily: "monospace",
-                                fontSize: 18,
-                                letterSpacing: "0.19em",
-                                color: "rgba(244,244,239,0.7)",
-                                textTransform: "uppercase",
-                            }}
-                        >
-                            {eyebrowRight}
-                        </div>
-                    </div>
+                    {eyebrowLabel}
+                </span>
+            </div>
 
-                    <div
+            <div
+                style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    marginTop: "auto",
+                    marginBottom: 116,
+                    padding: "0 80px",
+                    position: "relative",
+                }}
+            >
+                <div
+                    style={{
+                        display: "flex",
+                        maxWidth: 880,
+                        fontFamily: '"Geist", "Inter", "Helvetica Neue", Arial, sans-serif',
+                        fontSize: titleFontSize,
+                        fontWeight: 760,
+                        lineHeight: 0.98,
+                        letterSpacing: 0,
+                        color: "#ffffff",
+                    }}
+                >
+                    {safeTitle}
+                </div>
+                <div
+                    style={{
+                        display: "flex",
+                        marginTop: 28,
+                        maxWidth: 720,
+                        fontFamily: '"Geist Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+                        fontSize: safeDescription.length > 120 ? 19 : 21,
+                        lineHeight: 1.45,
+                        letterSpacing: 0,
+                        color: "rgba(247,247,243,0.56)",
+                    }}
+                >
+                    {safeDescription}
+                </div>
+            </div>
+
+            <div
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-start",
+                    padding: "0 80px 58px",
+                    position: "relative",
+                }}
+            >
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 16,
+                    }}
+                >
+                    <span
                         style={{
-                            width: "100%",
                             display: "flex",
-                            flexDirection: "column",
-                            flex: 1,
+                            fontFamily:
+                                '"Geist Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+                            fontSize: 17,
+                            letterSpacing: 0,
+                            textTransform: "uppercase",
+                            color: "rgba(247,247,243,0.4)",
                         }}
                     >
-                        <div
-                            style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                flex: 1,
-                                maxWidth: titleMaxWidth,
-                                padding: "122px 88px 58px",
-                            }}
-                        >
-                            <div
-                                style={{
-                                    display: "block",
-                                    maxWidth: titleMaxWidth,
-                                    fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif',
-                                    fontSize: titleFontSize,
-                                    fontWeight: 800,
-                                    lineHeight: titleLineHeight,
-                                    letterSpacing: titleLetterSpacing,
-                                    color: "#f5f3ee",
-                                    whiteSpace: hasExplicitTitleLines ? "pre-wrap" : "normal",
-                                }}
-                            >
-                                {renderedTitle}
-                            </div>
-                            {safeDescription ? (
-                                <div
-                                    style={{
-                                        display: "block",
-                                        marginTop: descriptionMarginTop,
-                                        maxWidth: hasExplicitTitleLines ? 700 : 760,
-                                        fontFamily: "monospace",
-                                        fontSize: hasExplicitTitleLines
-                                            ? Math.max(descriptionFontSize - 6, 18)
-                                            : Math.max(descriptionFontSize - 4, 20),
-                                        fontWeight: 300,
-                                        lineHeight: hasExplicitTitleLines ? 1.18 : 1.22,
-                                        letterSpacing: "-0.04em",
-                                        color: "rgba(244,244,239,0.5)",
-                                    }}
-                                >
-                                    {safeDescription}
-                                </div>
-                            ) : null}
-                            {command ? (
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        marginTop: 34,
-                                        fontFamily: "monospace",
-                                        fontSize: 23,
-                                        letterSpacing: "-0.03em",
-                                        color: "rgba(244,244,239,0.5)",
-                                    }}
-                                >
-                                    <span>$&nbsp;</span>
-                                    <span style={{ color: "rgba(244,244,239,0.74)" }}>
-                                        {command}
-                                    </span>
-                                </div>
-                            ) : null}
-                        </div>
-                        <div
-                            style={{
-                                height: 70,
-                                display: "flex",
-                                borderTop: "1px solid rgba(255,255,255,0.1)",
-                                backgroundColor: "#060606",
-                                backgroundImage:
-                                    "repeating-linear-gradient(45deg, rgba(255,255,255,0.028) 0px, rgba(255,255,255,0.028) 2px, transparent 2px, transparent 18px)",
-                            }}
-                        />
-                    </div>
+                        documentation
+                    </span>
+                    <div
+                        style={{
+                            display: "flex",
+                            width: 1,
+                            height: 18,
+                            backgroundColor: "rgba(255,255,255,0.35)",
+                        }}
+                    />
+                    <span
+                        style={{
+                            display: "flex",
+                            fontFamily:
+                                '"Geist Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+                            fontSize: 17,
+                            letterSpacing: 0,
+                            textTransform: "uppercase",
+                            color: "rgba(247,247,243,0.4)",
+                        }}
+                    >
+                        better-agent.com/docs
+                    </span>
                 </div>
             </div>
         </div>,
         {
-            width: OG_IMAGE_SIZE.width,
-            height: OG_IMAGE_SIZE.height,
+            ...OG_IMAGE_SIZE,
+            fonts,
         },
     );
 }

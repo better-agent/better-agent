@@ -1,166 +1,198 @@
 export { defineAgent } from "./agent";
+export { EventType } from "./ag-ui";
+export {
+    BetterAgentError,
+    fromProblemDetails,
+    toProblemDetails,
+} from "@better-agent/shared/errors";
 export type {
-    AgentContext,
-    AgentContextFromSchema,
+    BetterAgentErrorCode,
+    BetterAgentProblemDetails,
+} from "@better-agent/shared/errors";
+export type {
+    AgentContextOf,
+    AgentAccess,
     AgentDefinition,
     AgentInstruction,
-    AgentKnownToolName,
-    AgentModelOptions,
-    AgentModelCaps,
-    AgentOnStep,
-    AgentOnStepFinish,
-    AgentOutputSchema,
-    AgentStructuredOutput,
-    AgentTools,
-    AnyAgentDefinition,
+    AnyDefinedAgent,
 } from "./agent";
-
-export { betterAgent } from "./app/create-app";
+export type { AuthContext, AuthResolver } from "./auth/types";
 export type {
-    AppRunInput,
-    AppRunOptions,
-    AppStreamOptions,
-    BetterAgentAdvancedConfig,
+    AgentEvent,
+    AgentCustomEvent,
+    AgentSourceEvent,
+    AgentRunStartedEvent,
+    AgentRunFinishedEvent,
+    AgentRunErrorEvent,
+    AgentStepStartedEvent,
+    AgentStepFinishedEvent,
+    AgentTextMessageStartEvent,
+    AgentTextMessageContentEvent,
+    AgentTextMessageEndEvent,
+    AgentToolCallStartEvent,
+    AgentToolCallArgsEvent,
+    AgentToolCallEndEvent,
+    AgentToolCallResultEvent,
+    AgentStateSnapshotEvent,
+    AgentStateDeltaEvent,
+    AgentMessagesSnapshotEvent,
+} from "./ag-ui";
+export type {
+    AgentInputMessage,
+    AgentMessage,
+    AgentMessageContent,
+    AgentMessageRole,
+    AgentToolResultStatus,
+    AgentSource,
+    AgentDeveloperMessage,
+    AgentSystemMessage,
+    AgentUserMessage,
+    AgentAssistantMessage,
+    AgentToolMessage,
+    AgentActivityMessage,
+    AgentReasoningMessage,
+} from "./ag-ui";
+export type {
+    AgentState,
+    JsonPatchOperation,
+    AgentStateHandle,
+} from "./ag-ui";
+export type {
+    AgentToolDefinition,
+    AgentToolCall,
+} from "./ag-ui";
+export { betterAgent } from "./app";
+export type {
     BetterAgentApp,
     BetterAgentConfig,
-    BetterAgentHandler,
-} from "./app/types";
-export type { BetterAgentServer, CreateServerConfig } from "./server";
-
-export { definePlugin } from "./plugins/runtime";
-
-export * from "./persistence";
+    AppRunInput,
+} from "./app";
+export type { AgentCapabilities } from "./capabilities";
+export { createMemory, defaultGenerateMemoryId } from "./memory";
 export type {
-    ConversationStore,
-    ConversationCursor,
-    ConversationRunStatus,
-    ConversationRuntimeState,
-    ConversationRuntimeStateStore,
-    LoadedConversation,
-    SaveConversationParams,
-    SaveConversationResult,
-    StreamEvent,
-    StreamStore,
-} from "./persistence";
+    AgentMemory,
+    CreateMemoryOptions,
+    MemoryIdContext,
+    MemoryIdGenerator,
+    MemoryIdKind,
+    MemoryMessage,
+    MemoryThread,
+} from "./memory";
+export type {
+    GenerationModelKind,
+    BaseGenerationModel,
+    GenerationMessage,
+    TextGenerationInputValue,
+    TranscriptionGenerationInputValue,
+    GeneratedFile,
+    GeneratedImage,
+    GeneratedVideo,
+    VideoGenerationImageInput,
+    VideoGenerationInputValue,
+    TextGenerationInput,
+    TextGenerationResult,
+    TextGenerationStreamResult,
+    TextGenerationModel,
+    EmbeddingGenerationInput,
+    EmbeddingGenerationManyInput,
+    EmbeddingGenerationResult,
+    EmbeddingGenerationManyResult,
+    EmbeddingGenerationModel,
+    ImageGenerationInput,
+    ImageGenerationResult,
+    ImageGenerationModel,
+    VideoGenerationInput,
+    VideoGenerationResult,
+    VideoGenerationModel,
+    SpeechGenerationInput,
+    SpeechGenerationResult,
+    SpeechGenerationModel,
+    TranscriptionGenerationInput,
+    TranscriptionGenerationResult,
+    TranscriptionGenerationModel,
+    AgentModel,
+    AgentModelLike,
+    AgentModelToolDefinition,
+    AgentToolChoice,
+    AgentModelGenerateOptions,
+    AgentModelGenerateResult,
+    AgentModelStreamResult,
+} from "./models";
+export { createPluginRuntime, definePlugin } from "./plugins";
 export type {
     Plugin,
-    PluginBaseContext,
     PluginEndpoint,
     PluginEndpointHandler,
+    PluginEndpointMethod,
     PluginEventContext,
     PluginEventMiddleware,
     PluginGuard,
-    PluginGuardMode,
+    PluginGuardContext,
     PluginModelCallContext,
     PluginModelResponseContext,
-    PluginOnStepContext,
-    PluginRunContext,
     PluginRuntime,
     PluginRuntimeEndpoint,
-    PluginSaveContext,
+    PluginStepContext,
+    PluginStepFinishContext,
     PluginToolCallContext,
     PluginToolCallDecision,
     PluginToolResultContext,
-} from "./plugins/types";
-
-export { createRuntime } from "./run";
-export { pruneInputByCapabilities } from "./run";
-export { createServer } from "./server";
+} from "./plugins";
 export type {
-    BetterAgentRuntime,
-    ConversationReplayOptions,
-    OnStepContext,
-    OnStepFinishContext,
-    PreviousStepResult,
-    ResumeConversationOptions,
-    ResumeStreamOptions,
-    RunContext,
-    RunAdvancedOptions,
-    RunOptions,
-    RunOptionsForAgent,
-    RunOutputOverrideForAgent,
-    RunPersistenceOptions,
+    AgentRunContext,
+    BaseRunResult,
+    BetterAgentIdContext,
+    BetterAgentIdGenerator,
+    BetterAgentIdKind,
+    BetterAgentMessageIdRole,
+    InterruptedRunResult,
+    RuntimeInterrupt,
     RunResult,
-    RunResultForAgent,
-    StopWhen,
-    StopWhenContext,
     StreamResult,
-    StreamResultForAgent,
-    SubmitToolApprovalParams,
-    SubmitToolResultParams,
-} from "./run";
+    SuccessfulRunResult,
+} from "./runtime";
+export { defaultGenerateId, RuntimeInterruptReason } from "./runtime";
+export { createCompositeStorage, createInMemoryStorage } from "./storage";
 export type {
-    MissingTextOutputError,
-    OnOutputError,
-    OutputErrorBase,
-    OutputErrorContext,
-    OutputErrorMode,
-    OutputErrorResult,
-    ParseOutputError,
-    RepairTextOutputAction,
-    RepairValueOutputAction,
-    SkipOutputAction,
-    ThrowOutputAction,
-    ValidationOutputError,
-} from "./run/output-errors";
-
-export type { GenerativeModel } from "./providers";
-
+    BetterAgentStorage,
+    CreateCompositeStorageOptions,
+    RunStatus,
+    RunRecord,
+    StoreListQuery,
+    StoreListResult,
+    StoreValue,
+    StorageDomain,
+    StorageScope,
+    StorageTable,
+    StreamStatus,
+    StreamEventRecord,
+    StreamRecord,
+} from "./storage";
 export {
-    resolveToJsonSchema,
-    validateInput,
-} from "./schema/resolve-json-schema";
+    storageDomains,
+    storageTables,
+    throwUnsupportedStorageTable,
+    unsupportedStorageTableError,
+} from "./storage";
+export { toJsonSchema, validateInput } from "./schema";
 export type {
-    AnyStandardSchemaV1,
-    InferSchemaInput,
-    InferStandardInput,
     ResolvableSchema,
+    AgentOutput,
+    JsonSchema,
     StandardSchema,
-    ValidatableSchema,
-} from "./schema/types";
-
-export { defineTool } from "./tools/define-tool";
-export { lazyTools } from "./tools/lazy-tools";
-export { isCallableToolDefinition } from "./tools/resolve-tools";
+    InferSchemaInput,
+    InferSchemaOutput,
+} from "./schema";
+export { defineTool } from "./tools";
 export type {
-    AgentToolDefinition,
-    ClientToolDefinition,
-    ExecutionToolError,
-    ExecutionToolErrorResult,
-    HostedToolDefinition,
-    LazyToolLoader,
-    LazyToolSource,
-    LazyToolSourceResult,
-    OnToolError,
-    ParseToolError,
-    ParseToolErrorResult,
-    OpenString,
-    RepairAction,
-    ResultAction,
-    RetryAction,
-    SendToModelAction,
-    ServerToolDefinition,
-    SkipAction,
-    ThrowAction,
-    ToolApprovalConfig,
-    ToolApprovalDecision,
-    ToolApprovalState,
-    ToolContract,
-    ToolContractConfig,
-    ToolDefinitionTarget,
-    ToolErrorBase,
-    ToolErrorContext,
-    ToolErrorMode,
-    ToolErrorPayload,
-    ToolHandler,
-    ToolListFactory,
-    ToolNameOf,
-    ToolNamesOf,
-    ToolRunContext,
-    ToolSource,
-    ToolSourceResult,
     ToolTarget,
-    ValidationToolError,
-    ValidationToolErrorResult,
-} from "./tools/types";
-export { TOOL_JSON_SCHEMA, TOOL_CLEANUP } from "./tools";
+    ToolErrorMode,
+    ToolInterruptConfig,
+    ToolApprovalConfig,
+    ToolExecutionContext,
+    ServerToolDefinition,
+    ClientToolDefinition,
+    ToolDefinitionInput,
+    AnyDefinedTool,
+    ToolSource,
+} from "./tools";

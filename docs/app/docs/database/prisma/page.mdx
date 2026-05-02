@@ -1,0 +1,74 @@
+---
+title: "Prisma"
+description: "Prisma adapter for Better Agent."
+icon: prisma
+---
+
+# Prisma
+
+Use Prisma as the storage adapter for memory, runs, and streams.
+
+## Install
+
+```bash
+npm install @better-agent/prisma @prisma/client prisma
+```
+
+## Generate schema
+
+Add the Better Agent models to your Prisma schema.
+
+```bash
+npx @better-agent/prisma generate --provider postgresql
+```
+
+Supported providers: `postgresql`, `mysql`, and `sqlite`.
+
+Use `--only` when you only want some storage areas.
+
+```bash
+npx @better-agent/prisma generate --provider postgresql --only memory,runs,streams
+```
+
+## Migrate
+
+Run Prisma migration and client generation after updating the schema.
+
+```bash
+npx prisma migrate dev
+npx prisma generate
+```
+
+## Setup
+
+Pass your Prisma client to `prismaStorage`.
+
+```typescript
+import { betterAgent } from "@better-agent/core";
+import { prismaStorage } from "@better-agent/prisma";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+export const app = betterAgent({
+  storage: prismaStorage({
+    client: prisma,
+  }),
+  agents: [supportAgent],
+});
+```
+
+## Options
+
+| Option   | Description                     |
+| -------- | ------------------------------- |
+| `client` | Existing Prisma client instance. |
+
+## Notes
+
+The generator updates your Prisma schema. Prisma still owns migrations,
+database connection settings, and client generation.
+
+See [Storage](/docs/concepts/storage) for what Better Agent stores.
+
+Powered by [Farming Labs ORM](https://orm.farming-labs.dev/docs).

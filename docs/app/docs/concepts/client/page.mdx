@@ -1,0 +1,224 @@
+---
+title: "Client"
+description: "Call agents from your frontend."
+icon: code
+---
+
+# Client
+
+The client connects your frontend to the Better Agent HTTP handler. Pass your
+server app type to keep agent names, context, memory helpers, and client tool
+handlers aligned with the backend.
+
+## Create a client
+
+```typescript
+import { createClient } from "@better-agent/client";
+import type app from "@/better-agent/server";
+
+export const client = createClient<typeof app>({
+  baseURL: "/api/agents",
+});
+```
+
+`baseURL` should point to the route where your app handler is mounted.
+
+## Run an agent
+
+Use `client.agent("name")` to call a specific agent.
+
+```typescript
+const result = await client.agent("support").run({
+  messages: [{ role: "user", content: "My order is late." }],
+});
+
+console.log(result.outcome);
+```
+
+Use `stream` when you want events as the run progresses.
+
+```typescript
+import { EventType } from "@better-agent/core";
+
+for await (const event of client.agent("support").stream({
+  messages: [{ role: "user", content: "Summarize this thread." }],
+})) {
+  if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
+    appendText(event.delta);
+  }
+}
+```
+
+See [Events](/docs/concepts/events) for AG-UI event details.
+
+## React
+
+Use the React hook for chat state, streaming, and interrupts.
+
+```tsx
+"use client";
+
+import { useAgent } from "@better-agent/client/react";
+import { client } from "@/better-agent/client";
+
+export function SupportChat() {
+  const agent = useAgent(client.agent("support"), {
+    threadId: "main",
+  });
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        agent.sendMessage(String(form.get("message") ?? ""));
+        event.currentTarget.reset();
+      }}
+    >
+      {agent.messages.map((message) => (
+        <p key={message.id}>{message.role}</p>
+      ))}
+
+      <input name="message" disabled={agent.isRunning} />
+      <button disabled={agent.isRunning}>Send</button>
+    </form>
+  );
+}
+```
+
+The hook returns `messages`, `state`, `status`, `isRunning`, `sendMessage`,
+`stop`, `resume`, and interrupt helpers.
+
+## Framework hooks
+
+Framework adapters are available from sub-paths:
+
+| Framework | Import |
+| --- | --- |
+| React | `@better-agent/client/react` |
+| Vue | `@better-agent/client/vue` |
+| Svelte | `@better-agent/client/svelte` |
+| Solid | `@better-agent/client/solid` |
+| Preact | `@better-agent/client/preact` |
+
+Each adapter exposes framework-native state for messages, streaming, state,
+threads, and interrupts.
+
+## Auth
+
+Use `headers` for bearer tokens or API keys.
+
+```typescript
+export const client = createClient<typeof app>({
+  baseURL: "/api/agents",
+  headers: async () => ({
+    Authorization: `Bearer ${await getToken()}`,
+  }),
+});
+```
+
+Use `credentials: "include"` for cookie-based auth.
+
+```typescript
+export const client = createClient<typeof app>({
+  baseURL: "/api/agents",
+  credentials: "include",
+});
+```
+
+Use `prepareRequest` when you need to rewrite the request before `fetch`.
+
+```typescript
+const client = createClient<typeof app>({
+  baseURL: "/api/agents",
+  prepareRequest(request) {
+    request.headers.set("x-request-id", crypto.randomUUID());
+    return request;
+  },
+});
+```
+
+See [Auth](/docs/concepts/auth) for server-side identity resolution.
+
+## Client tools
+
+Client tool handlers run in the user's app.
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  toolHandlers: {
+    confirm_address: async (input) => {
+      const confirmed = await openAddressDialog(input);
+      return { confirmed };
+    },
+  },
+});
+```
+
+When a matching handler exists, the hook resolves the client tool and resumes
+the run automatically. Without a handler, `pendingClientTools` lets your UI show
+what input is waiting for a handler.
+
+See [Tools](/docs/concepts/tools) for client tools.
+
+## Approvals
+
+The hook exposes pending approval interrupts.
+
+```tsx
+async function approveAll() {
+  for (const approval of agent.pendingToolApprovals) {
+    await agent.approveToolCall(approval.interruptId);
+  }
+}
+```
+
+Use `rejectToolCall` to deny a pending approval. See
+[Human in the Loop](/docs/concepts/hil) for approval setup.
+
+## Memory
+
+Pass `threadId` to continue a saved conversation.
+
+```typescript
+await client.agent("support").run({
+  threadId: "thread_123",
+  messages: [{ role: "user", content: "Continue our last chat." }],
+});
+```
+
+When memory is configured, the client exposes thread and message helpers.
+
+```typescript
+const threads = await client.agent("support").memory.threads.list();
+const messages = await client
+  .agent("support")
+  .memory.messages.list("thread_123", { limit: 20 });
+```
+
+See [Memory](/docs/concepts/memory) for setup.
+
+## Runs
+
+Abort an active run from the client.
+
+```typescript
+await client.runs.abort("run_123");
+```
+
+Resume a stored stream by run id.
+
+```typescript
+for await (const event of client.runs.resumeStream({
+  runId: "run_123",
+  afterSequence: 42,
+})) {
+  console.log(event.type);
+}
+```
+
+Stream resume requires storage for run and stream records. See
+[Storage](/docs/concepts/storage) for setup and
+[Drizzle](/docs/database/drizzle), [Kysely](/docs/database/kysely),
+[Prisma](/docs/database/prisma), or [Redis](/docs/database/redis) for
+production adapters.

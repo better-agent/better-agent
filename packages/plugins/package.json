@@ -1,6 +1,6 @@
 {
     "name": "@better-agent/plugins",
-    "version": "0.1.0-canary.6",
+    "version": "0.1.0-beta.4",
     "description": "Better Agent plugins TypeScript library",
     "license": "MIT",
     "repository": {
@@ -11,6 +11,10 @@
     "homepage": "https://github.com/better-agent/better-agent/tree/main/packages/plugins",
     "bugs": {
         "url": "https://github.com/better-agent/better-agent/issues"
+    },
+    "engines": {
+        "bun": ">=1.3.3",
+        "node": ">=20"
     },
     "type": "module",
     "types": "./dist/index.d.mts",
@@ -24,6 +28,7 @@
     "scripts": {
         "build": "bunx tsdown",
         "dev": "bunx tsdown --watch --no-clean",
+        "test": "bun test __tests__",
         "lint:package": "bunx publint run --strict",
         "lint:types": "npm_config_cache=../../.npm-cache bunx attw --profile esm-only --pack .",
         "lint": "bunx biome check .",
@@ -39,12 +44,23 @@
         "@better-agent/shared": "workspace:*"
     },
     "devDependencies": {
+        "@better-agent/core": "workspace:*",
         "@daytonaio/sdk": "^0.161.0",
-        "@types/bun": "^1.2.18",
-        "@types/node": "^22.15.30",
+        "@types/bun": "^1.3.12",
+        "@types/node": "^22.19.17",
         "e2b": "^2.19.0"
     },
     "peerDependencies": {
-        "@better-agent/core": "workspace:*"
+        "@better-agent/core": "workspace:*",
+        "@daytonaio/sdk": "^0.161.0",
+        "e2b": "^2.19.0"
+    },
+    "peerDependenciesMeta": {
+        "@daytonaio/sdk": {
+            "optional": true
+        },
+        "e2b": {
+            "optional": true
+        }
     }
 }

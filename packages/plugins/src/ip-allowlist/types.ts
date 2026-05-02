@@ -1,7 +1,5 @@
-import type { PluginGuardMode } from "@better-agent/core";
-
-/** Configuration for `ipAllowlistPlugin`. */
-export type IpAllowlistPluginConfig = {
+/** Configuration for `ipAllowlist`. */
+export type IpAllowlistConfig = {
     /** Plugin id. */
     id?: string;
     /** Allowed IPs or CIDR ranges. */
@@ -12,8 +10,6 @@ export type IpAllowlistPluginConfig = {
     getIp?: (ctx: {
         /** Agent name. */
         agentName: string;
-        /** Guard mode. */
-        mode: PluginGuardMode;
         /** Incoming request. */
         request: Request;
     }) => string | null | undefined | Promise<string | null | undefined>;
@@ -23,8 +19,6 @@ export type IpAllowlistPluginConfig = {
         ip: string | null;
         /** Agent name. */
         agentName: string;
-        /** Guard mode. */
-        mode: PluginGuardMode;
         /** Incoming request. */
         request: Request;
     }) => Response | Promise<Response>;

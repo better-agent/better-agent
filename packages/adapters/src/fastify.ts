@@ -28,7 +28,7 @@ export const toFastifyHandler = (
 
         const webRequest = createNodeRequest(request.raw, reply.raw, {
             ...options,
-            body,
+            body: options?.body ?? body,
             origin:
                 options?.origin ??
                 (request.protocol

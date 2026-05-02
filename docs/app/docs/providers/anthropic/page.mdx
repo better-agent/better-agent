@@ -1,0 +1,116 @@
+---
+title: "Anthropic"
+description: "Use Anthropic Claude models and hosted tools."
+icon: anthropic
+---
+
+# Anthropic
+
+## Install
+
+```bash
+npm install @better-agent/anthropic
+```
+
+## Agent model
+
+```typescript
+import { defineAgent } from "@better-agent/core";
+import { anthropic } from "@better-agent/anthropic";
+
+export const supportAgent = defineAgent({
+  name: "support",
+  model: anthropic("claude-sonnet-4-5"),
+  instruction: "You help customers.",
+});
+```
+
+## Configure
+
+```typescript
+import { createAnthropic } from "@better-agent/anthropic";
+
+const anthropic = createAnthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+```
+
+## Hosted tools
+
+Anthropic hosted tools are available on `anthropic.tools`.
+
+```typescript
+const agent = defineAgent({
+  name: "researcher",
+  model: anthropic("claude-sonnet-4-5"),
+  tools: [
+    anthropic.tools.webSearch_20250305({ maxUses: 3 }),
+  ],
+});
+```
+
+See [Tools](/docs/concepts/tools) for local tools, client tools, approvals, MCP,
+and hosted provider tools.
+
+## Direct generation
+
+Use generation models when a tool needs a focused model call without running an
+agent.
+
+```typescript
+const text = anthropic.text("claude-sonnet-4-5");
+
+const classify = defineTool({
+  name: "classify_ticket",
+  description: "Classify a support ticket.",
+  inputSchema: z.object({
+    message: z.string(),
+  }),
+  execute: async ({ message }) => {
+    const result = await text.generate({
+      input: `Return one label for this ticket: billing, bug, sales, or other.\n\n${message}`,
+    });
+
+    return { label: result.text.trim() };
+  },
+});
+```
+
+## Model types
+
+`anthropic("claude-sonnet-4-5")` is an agent model for `defineAgent`. Agent
+models need text for messages, tool decisions, and streaming. They can support
+more than text depending on the model.
+
+`anthropic.text(...)` is a generation model for direct text calls from app code
+or tools. It does not run the agent loop.
+
+## Provider options
+
+Pass Anthropic options at run time with the `anthropic` provider key.
+
+```typescript
+await app.agent("support").run({
+  messages,
+  providerOptions: {
+    anthropic: {
+      thinking: { type: "enabled", budgetTokens: 1024 },
+    },
+  },
+});
+```
+
+## Capabilities
+
+| Feature           | Support |
+| ----------------- | ------- |
+| Agent model       | Yes     |
+| Text generation   | Yes     |
+| Streaming         | Yes     |
+| Structured output | Yes     |
+| Hosted tools      | Yes     |
+| Embeddings        | No      |
+| Images            | No      |
+| Audio             | No      |
+
+Source: built on [`@ai-sdk/anthropic`](https://www.npmjs.com/package/@ai-sdk/anthropic).

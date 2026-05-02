@@ -1,6 +1,6 @@
 {
     "name": "@better-agent/adapters",
-    "version": "0.1.0-canary.6",
+    "version": "0.1.0-beta.4",
     "description": "Better Agent framework adapters",
     "license": "MIT",
     "repository": {
@@ -11,6 +11,10 @@
     "homepage": "https://github.com/better-agent/better-agent/tree/main/packages/adapters",
     "bugs": {
         "url": "https://github.com/better-agent/better-agent/issues"
+    },
+    "engines": {
+        "bun": ">=1.3.3",
+        "node": ">=20"
     },
     "type": "module",
     "types": "./dist/index.d.mts",
@@ -39,6 +43,7 @@
     "scripts": {
         "build": "bunx tsdown",
         "dev": "bunx tsdown --watch --no-clean",
+        "test": "bun test __tests__",
         "lint:package": "bunx publint run --strict",
         "lint:types": "npm_config_cache=../../.npm-cache bunx attw --profile esm-only --pack .",
         "lint": "bunx biome check .",
@@ -52,12 +57,11 @@
     },
     "devDependencies": {
         "@better-agent/core": "workspace:*",
-        "@types/bun": "^1.2.18",
+        "@types/bun": "^1.3.12",
         "@types/express": "^5.0.3",
-        "@types/node": "^22.15.30",
+        "@types/node": "^22.19.17",
         "express": "^5.1.0",
-        "fastify": "^5.6.1",
-        "neverthrow": "^8.2.0"
+        "fastify": "^5.6.1"
     },
     "peerDependencies": {
         "@better-agent/core": "workspace:*"

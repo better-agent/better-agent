@@ -1,0 +1,22 @@
+export { createGemini, gemini } from "./model";
+export type {
+    CreateGeminiOptions,
+    GeminiEmbeddingModel,
+    GeminiEmbeddingModelId,
+    GeminiEmbeddingProviderOptions,
+    GeminiGenerationProviderOptions,
+    GeminiImageModel,
+    GeminiImageModelId,
+    GeminiImageOptions,
+    GeminiImageProviderOptions,
+    GeminiModel,
+    GeminiModelId,
+    GeminiProvider,
+    GeminiProviderOptions,
+    GeminiTextModel,
+    GeminiTextModelId,
+    GeminiTextProviderOptions,
+    GeminiVideoModel,
+    GeminiVideoModelId,
+    GeminiVideoProviderOptions,
+} from "./model";

@@ -1,0 +1,125 @@
+---
+title: "xAI"
+description: "Use xAI models and hosted tools."
+icon: server
+---
+
+# xAI
+
+## Install
+
+```bash
+npm install @better-agent/xai
+```
+
+## Agent model
+
+```typescript
+import { defineAgent } from "@better-agent/core";
+import { xai } from "@better-agent/xai";
+
+export const supportAgent = defineAgent({
+  name: "support",
+  model: xai("grok-4"),
+  instruction: "You help customers.",
+});
+```
+
+## Configure
+
+```typescript
+import { createXai } from "@better-agent/xai";
+
+const xai = createXai({
+  apiKey: process.env.XAI_API_KEY,
+});
+```
+
+## Hosted tools
+
+xAI hosted tools are available on `xai.tools`.
+
+```typescript
+const agent = defineAgent({
+  name: "researcher",
+  model: xai("grok-4"),
+  tools: [
+    xai.tools.webSearch({}),
+  ],
+});
+```
+
+See [Tools](/docs/concepts/tools) for local tools, client tools, approvals, MCP,
+and hosted provider tools.
+
+## Direct generation
+
+Use generation models when a tool needs a focused model call without running an
+agent.
+
+```typescript
+const text = xai.text("grok-4");
+
+const rewrite = defineTool({
+  name: "rewrite",
+  description: "Rewrite text for a specific audience.",
+  inputSchema: z.object({
+    content: z.string(),
+    audience: z.string(),
+  }),
+  execute: async ({ content, audience }) => {
+    const result = await text.generate({
+      input: `Rewrite this for ${audience}:\n\n${content}`,
+    });
+
+    return { rewritten: result.text };
+  },
+});
+```
+
+Other generation helpers:
+
+```typescript
+const image = xai.image("grok-2-image");
+const video = xai.video("grok-video");
+```
+
+## Model types
+
+`xai("grok-4")` is an agent model for `defineAgent`. Agent models need text for
+messages, tool decisions, and streaming. They can support more than text
+depending on the model.
+
+`xai.text(...)`, `xai.image(...)`, and `xai.video(...)` are generation models for
+direct calls from app code or tools. They do not run the agent loop.
+
+## Provider options
+
+Pass xAI options at run time with the `xai` provider key.
+
+```typescript
+await app.agent("support").run({
+  messages,
+  providerOptions: {
+    xai: {
+      reasoningEffort: "medium",
+    },
+  },
+});
+```
+
+## Capabilities
+
+| Feature           | Support |
+| ----------------- | ------- |
+| Agent model       | Yes     |
+| Text generation   | Yes     |
+| Streaming         | Yes     |
+| Structured output | Yes     |
+| Hosted tools      | Yes     |
+| Embeddings        | No      |
+| Images            | Yes     |
+| Video             | Yes     |
+| Audio             | No      |
+
+Source: built on [`@ai-sdk/xai`](https://www.npmjs.com/package/@ai-sdk/xai).

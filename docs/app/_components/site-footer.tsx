@@ -12,14 +12,14 @@ export default function SiteFooter() {
                 >
                     <span
                         aria-hidden="true"
-                        className="font-sans text-[11px] font-semibold uppercase tracking-[0.02em] text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)]"
+                        className="font-sans text-[11px] font-[420] uppercase tracking-[0.02em] text-[color:color-mix(in_srgb,var(--foreground)_46%,transparent)]"
                     >
                         BETTER-AGENT.
                     </span>
                 </Link>
                 <div className="flex items-center gap-3">
                     <a
-                        className="text-[color:color-mix(in_srgb,var(--foreground)_36%,transparent)] transition-colors hover:text-[color:var(--foreground)]"
+                        className="text-[color:color-mix(in_srgb,var(--foreground)_34%,transparent)] transition-colors hover:text-[color:color-mix(in_srgb,var(--foreground)_78%,transparent)]"
                         href="https://github.com/better-agent/better-agent"
                         rel="noopener noreferrer"
                         target="_blank"

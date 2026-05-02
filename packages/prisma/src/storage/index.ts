@@ -1,0 +1,1 @@
+export { prismaStorage } from "./adapter";

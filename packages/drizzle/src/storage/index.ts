@@ -1,0 +1,1 @@
+export { drizzleStorage } from "./adapter";

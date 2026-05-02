@@ -1,0 +1,117 @@
+---
+title: "Ollama"
+description: "Run local models with Ollama."
+icon: ollama
+---
+
+# Ollama
+
+## Install
+
+```bash
+npm install @better-agent/ollama
+```
+
+## Agent model
+
+```typescript
+import { defineAgent } from "@better-agent/core";
+import { ollama } from "@better-agent/ollama";
+
+export const localAgent = defineAgent({
+  name: "local",
+  model: ollama("llama3.2", {
+    options: {
+      num_predict: 512,
+    },
+  }),
+  instruction: "You help with local development.",
+});
+```
+
+## Configure
+
+Use `createOllama` when your Ollama server is not at the default location.
+
+```typescript
+import { createOllama } from "@better-agent/ollama";
+
+const ollama = createOllama({
+  baseURL: "http://localhost:11434/api",
+});
+```
+
+## Hosted tools
+
+Ollama does not expose hosted provider tools. Use Better Agent tools for server
+tools, client tools, approvals, and MCP.
+
+## Direct generation
+
+Use generation models when a tool needs a focused local model call without
+running an agent.
+
+```typescript
+const text = ollama.text("llama3.2");
+
+const localSummarize = defineTool({
+  name: "local_summarize",
+  description: "Summarize text with a local model.",
+  inputSchema: z.object({
+    content: z.string(),
+  }),
+  execute: async ({ content }) => {
+    const result = await text.generate({
+      input: `Summarize this locally:\n\n${content}`,
+    });
+
+    return { summary: result.text };
+  },
+});
+```
+
+Other generation helpers:
+
+```typescript
+const embedding = ollama.embedding("nomic-embed-text");
+```
+
+## Model types
+
+`ollama("llama3.2")` is an agent model for `defineAgent`. Agent models need text
+for messages, tool decisions, and streaming. They can support more than text
+depending on the local model.
+
+`ollama.text(...)` and `ollama.embedding(...)` are generation models for direct
+calls from app code or tools. They do not run the agent loop.
+
+## Provider options
+
+Pass Ollama provider options at run time with the `ollama` provider key. Pass
+model parameters, such as `num_predict`, when creating the model.
+
+```typescript
+await app.agent("local").run({
+  messages,
+  providerOptions: {
+    ollama: {
+      structuredOutputs: true,
+    },
+  },
+});
+```
+
+## Capabilities
+
+| Feature           | Support           |
+| ----------------- | ----------------- |
+| Agent model       | Yes               |
+| Text generation   | Yes               |
+| Streaming         | Yes               |
+| Structured output | Yes               |
+| Hosted tools      | No hosted tools   |
+| Embeddings        | Yes               |
+| Images            | No                |
+| Audio             | No                |
+
+Source: built on [`ai-sdk-ollama`](https://www.npmjs.com/package/ai-sdk-ollama).

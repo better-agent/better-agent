@@ -1,0 +1,175 @@
+---
+title: "SolidStart"
+description: "Use Better Agent with SolidStart."
+icon: solid
+---
+
+# SolidStart
+
+Use Better Agent in SolidStart with an API route and the Solid `useAgent` hook.
+
+## Server
+
+```typescript
+// src/lib/better-agent/server.ts
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { openai } from "@better-agent/openai";
+
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help customers.",
+});
+
+const app = betterAgent({
+  agents: [supportAgent],
+  basePath: "/api/agents",
+});
+
+export default app;
+```
+
+## Route
+
+```typescript
+// src/routes/api/agents/[...path]/index.ts
+import type { APIEvent } from "@solidjs/start/server";
+import app from "../../../../lib/better-agent/server";
+
+const handle = (event: APIEvent) => app.handler(event.request);
+
+export const GET = handle;
+export const POST = handle;
+export const PUT = handle;
+export const PATCH = handle;
+export const DELETE = handle;
+export const OPTIONS = handle;
+export const HEAD = handle;
+```
+
+## Client
+
+```typescript
+// src/lib/better-agent/client.ts
+import { createClient } from "@better-agent/client";
+import type app from "./server";
+
+export const client = createClient<typeof app>({
+  baseURL: "/api/agents",
+});
+```
+
+## Basic chat
+
+```tsx
+import { useAgent } from "@better-agent/client/solid";
+import { createSignal, For } from "solid-js";
+import { client } from "../lib/better-agent/client";
+
+export default function ChatPage() {
+  const [input, setInput] = createSignal("");
+  const agent = useAgent(client.agent("support"), {
+    threadId: "main",
+  });
+
+  async function send(event: SubmitEvent) {
+    event.preventDefault();
+    const message = input().trim();
+    if (!message) return;
+    setInput("");
+    await agent.sendMessage(message);
+  }
+
+  return (
+    <form onSubmit={send}>
+      <For each={agent.messages()}>
+        {(message) => <p>{message.role}</p>}
+      </For>
+      <input value={input()} onInput={(event) => setInput(event.currentTarget.value)} />
+      <button disabled={agent.isRunning()}>Send</button>
+      <button type="button" onClick={() => agent.stop()} disabled={!agent.isRunning()}>
+        Stop
+      </button>
+    </form>
+  );
+}
+```
+
+## Threads
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  threadId: "customer-123",
+});
+
+async function switchThread() {
+  await agent.loadMessages();
+  await agent.selectThread("customer-456");
+}
+```
+
+## Context
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  context: {
+    workspaceId: "workspace_123",
+  },
+});
+```
+
+## Client tools
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  toolHandlers: {
+    confirm_address: async (input) => {
+      const confirmed = window.confirm(input.address);
+      return { confirmed };
+    },
+  },
+});
+```
+
+## Approvals
+
+```tsx
+async function approveAll() {
+  for (const approval of agent.pendingToolApprovals()) {
+    await agent.approveToolCall(approval.interruptId);
+  }
+}
+```
+
+## Events
+
+```tsx
+import { EventType } from "@better-agent/core";
+
+const agent = useAgent(client.agent("support"), {
+  onEvent(event) {
+    if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
+      console.log(event.delta);
+    }
+  },
+});
+```
+
+## Finish and errors
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  onFinish(finish) {
+    console.log(finish.runId, finish.isInterrupted);
+  },
+  onError(error) {
+    console.error(error.code, error.message);
+  },
+});
+```
+
+## Next
+
+See [Client](/docs/concepts/client), [Tools](/docs/concepts/tools),
+[Human in the Loop](/docs/concepts/hil), [Memory](/docs/concepts/memory),
+[Events](/docs/concepts/events), and [Storage](/docs/concepts/storage).

@@ -1,37 +1,40 @@
-import type {
-    StandardJSONSchemaV1,
-    StandardSchemaV1,
-    StandardTypedV1,
-} from "@standard-schema/spec";
+import type { StandardJSONSchemaV1 } from "@standard-schema/spec";
 import type { FromSchema } from "json-schema-to-ts";
 
-/** Any Standard Schema v1 instance. */
-// biome-ignore lint/suspicious/noExplicitAny: intentional
-export type AnyStandardSchemaV1 = StandardSchemaV1<any, any>;
+export type JsonSchema = Record<string, unknown>;
 
-/** Standard Schema v1 typed schema. */
-export type StandardSchema<I = unknown, O = I> = StandardTypedV1<I, O>;
+export type StandardSchema<I = unknown, O = I> = StandardJSONSchemaV1<I, O>;
 
-/** Schema inputs that can be resolved to JSON Schema. */
-export type ResolvableSchema<I = unknown, O = I> =
-    | StandardJSONSchemaV1<I, O>
-    | Record<string, unknown>;
+export type ResolvableSchema<I = unknown, O = I> = StandardSchema<I, O> | JsonSchema;
 
-/** Schema inputs that can be validated at runtime. */
-export type ValidatableSchema<I = unknown, O = I> = StandardSchemaV1<I, O> | ResolvableSchema<I, O>;
-
-/** Infers the input type from a Standard Schema v1 typed schema. */
-export type InferStandardInput<TSchema> = TSchema extends {
-    "~standard"?: { types?: { input?: infer I } };
+export interface AgentOutput<TSchema extends ResolvableSchema = ResolvableSchema> {
+    schema: TSchema;
+    name?: string;
+    description?: string;
 }
-    ? I
+
+export type InferStandardSchemaInput<TSchema> = TSchema extends {
+    "~standard"?: { types?: { input?: infer TInput } };
+}
+    ? TInput
     : never;
 
-/**
- * Infers the input type from either a Standard Schema v1 typed schema or a JSON Schema object.
- */
-export type InferSchemaInput<TSchema> = [InferStandardInput<TSchema>] extends [never]
-    ? TSchema extends Record<string, unknown>
-        ? FromSchema<TSchema>
-        : unknown
-    : InferStandardInput<TSchema>;
+export type InferStandardSchemaOutput<TSchema> = TSchema extends {
+    "~standard"?: { types?: { output?: infer TOutput } };
+}
+    ? TOutput
+    : never;
+
+export type InferJsonSchema<TSchema> = TSchema extends JsonSchema ? FromSchema<TSchema> : never;
+
+export type InferSchemaInput<TSchema> = [InferStandardSchemaInput<TSchema>] extends [never]
+    ? InferJsonSchema<TSchema>
+    : InferStandardSchemaInput<TSchema>;
+
+export type InferSchemaOutput<TSchema> = [InferStandardSchemaOutput<TSchema>] extends [never]
+    ? InferJsonSchema<TSchema>
+    : InferStandardSchemaOutput<TSchema>;
+
+export type InferAgentOutput<TOutput> = TOutput extends AgentOutput<infer TSchema>
+    ? InferSchemaOutput<TSchema>
+    : unknown;

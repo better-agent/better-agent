@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { rateLimitPlugin } from "../../src";
+import { rateLimit } from "../../src";
+import { createBucket } from "../../src/rate-limit/bucket";
+import { createMemoryStore } from "../../src/rate-limit/memory-store";
 
-describe("rateLimitPlugin", () => {
+describe("rateLimit", () => {
     test("allows requests up to max and blocks the next request", async () => {
         const rows = new Map<string, { count: number; version: number }>();
-        const plugin = rateLimitPlugin({
+        const plugin = rateLimit({
             windowMs: 60_000,
             max: 2,
             key: ({ agentName, request }) =>
@@ -31,14 +33,13 @@ describe("rateLimitPlugin", () => {
         expect(guard).toBeDefined();
 
         const base = {
-            mode: "run" as const,
             agentName: "assistant",
+            auth: null,
             input: { userId: "u1" },
             request: new Request("https://example.com/agents/assistant/run", {
                 method: "POST",
                 headers: { "x-user-id": "u1" },
             }),
-            plugins: [plugin],
         };
 
         const first = await guard?.(base);
@@ -54,7 +55,7 @@ describe("rateLimitPlugin", () => {
     test("retries when storage write returns CAS conflict", async () => {
         const rows = new Map<string, { count: number; version: number }>();
         let writes = 0;
-        const plugin = rateLimitPlugin({
+        const plugin = rateLimit({
             windowMs: 60_000,
             max: 10,
             storage: {
@@ -79,11 +80,10 @@ describe("rateLimitPlugin", () => {
 
         const guard = plugin.guards?.[0];
         const response = await guard?.({
-            mode: "run",
             agentName: "assistant",
+            auth: null,
             input: { value: 1 },
             request: new Request("https://example.com/agents/assistant/run", { method: "POST" }),
-            plugins: [plugin],
         });
 
         expect(response).toBeNull();
@@ -91,7 +91,7 @@ describe("rateLimitPlugin", () => {
     });
 
     test("can deny on storage error through onStoreError", async () => {
-        const plugin = rateLimitPlugin({
+        const plugin = rateLimit({
             windowMs: 60_000,
             max: 10,
             storage: {
@@ -107,18 +107,17 @@ describe("rateLimitPlugin", () => {
 
         const guard = plugin.guards?.[0];
         const response = await guard?.({
-            mode: "run",
             agentName: "assistant",
+            auth: null,
             input: { value: 1 },
             request: new Request("https://example.com/agents/assistant/run", { method: "POST" }),
-            plugins: [plugin],
         });
 
         expect(response?.status).toBe(503);
     });
 
     test("falls back to the default key when custom key is blank", async () => {
-        const plugin = rateLimitPlugin({
+        const plugin = rateLimit({
             windowMs: 60_000,
             max: 1,
             key: () => "   ",
@@ -126,11 +125,10 @@ describe("rateLimitPlugin", () => {
 
         const guard = plugin.guards?.[0];
         const base = {
-            mode: "run" as const,
             agentName: "assistant",
+            auth: null,
             input: {},
             request: new Request("https://example.com", { method: "POST" }),
-            plugins: [plugin],
         };
 
         const first = await guard?.(base);
@@ -140,16 +138,77 @@ describe("rateLimitPlugin", () => {
         expect(second?.status).toBe(429);
     });
 
+    test("passes auth context to key and store callbacks", async () => {
+        const seenSubjects: Array<string | null> = [];
+        const plugin = rateLimit({
+            windowMs: 60_000,
+            max: 1,
+            key: ({ auth }) => auth?.subject ?? "anonymous",
+            storage: {
+                async read({ request }) {
+                    seenSubjects.push(request.auth?.subject ?? null);
+                    return null;
+                },
+                async write({ request }) {
+                    seenSubjects.push(request.auth?.subject ?? null);
+                    return true;
+                },
+            },
+        });
+
+        const response = await plugin.guards?.[0]?.({
+            agentName: "assistant",
+            auth: { subject: "user_1" },
+            input: {},
+            request: new Request("https://example.com", { method: "POST" }),
+        });
+
+        expect(response).toBeNull();
+        expect(seenSubjects).toEqual(["user_1", "user_1"]);
+    });
+
+    test("default memory store prunes expired buckets", async () => {
+        const store = createMemoryStore();
+        const oldBucket = createBucket({
+            key: "assistant:user_1",
+            now: new Date(0),
+            windowMs: 1_000,
+        });
+        const currentBucket = createBucket({
+            key: "assistant:user_1",
+            now: new Date(2_000),
+            windowMs: 1_000,
+        });
+        const request = {
+            agentName: "assistant",
+            auth: null,
+            request: new Request("https://example.com"),
+        };
+
+        await store.write({
+            bucket: oldBucket,
+            request,
+            prevVersion: null,
+            next: { count: 1, version: 1 },
+        });
+
+        expect(await store.read({ bucket: oldBucket, request })).toMatchObject({ count: 1 });
+
+        await store.read({ bucket: currentBucket, request });
+
+        expect(await store.read({ bucket: oldBucket, request })).toBeNull();
+    });
+
     test("throws on invalid config", () => {
         expect(() =>
-            rateLimitPlugin({
+            rateLimit({
                 windowMs: 0,
                 max: 1,
             }),
         ).toThrow();
 
         expect(() =>
-            rateLimitPlugin({
+            rateLimit({
                 windowMs: 1000,
                 max: 0,
             }),

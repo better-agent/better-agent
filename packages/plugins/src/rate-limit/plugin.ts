@@ -6,8 +6,8 @@ import {
     createRateLimitStorageUnavailableResponse,
     createRateLimitedResponse,
 } from "./responses";
-import type { RateLimitPluginConfig, RateLimitStorageState } from "./types";
-import { validateRateLimitPluginConfig } from "./validate";
+import type { RateLimitConfig, RateLimitStorageState } from "./types";
+import { validateRateLimitConfig } from "./validate";
 
 /**
  * Creates a rate-limit plugin.
@@ -16,14 +16,14 @@ import { validateRateLimitPluginConfig } from "./validate";
  *
  * @example
  * ```ts
- * const plugin = rateLimitPlugin({
+ * const plugin = rateLimit({
  *   windowMs: 60_000,
  *   max: 30,
  * });
  * ```
  */
-export const rateLimitPlugin = (config: RateLimitPluginConfig): Plugin => {
-    validateRateLimitPluginConfig(config);
+export const rateLimit = (config: RateLimitConfig): Plugin => {
+    validateRateLimitConfig(config);
 
     const casRetries = config.casRetries ?? 8;
     const storage = config.storage ?? createMemoryStore();
@@ -33,9 +33,9 @@ export const rateLimitPlugin = (config: RateLimitPluginConfig): Plugin => {
         guards: [
             async (ctx) => {
                 const request = {
-                    mode: ctx.mode,
                     agentName: ctx.agentName,
                     request: ctx.request,
+                    auth: ctx.auth,
                 };
 
                 const now = new Date();

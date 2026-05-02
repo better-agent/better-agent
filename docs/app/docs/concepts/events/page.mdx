@@ -1,0 +1,60 @@
+---
+title: "Events"
+description: "Stream AG-UI events from agent runs."
+icon: activity
+---
+
+# Events
+
+Better Agent streams AG-UI events from every streaming run. The client SDK and
+framework hooks apply the common UI updates for you. Use events directly when
+you need custom logging, analytics, tracing, or product-specific side effects.
+
+Use `onEvent` when your app needs to observe the stream directly.
+
+## Stream events
+
+Call `.stream()` to receive events as they happen. Await `final` when you need
+the finished run result.
+
+```typescript
+import { EventType } from "@better-agent/core";
+
+const stream = await app.agent("support").stream({
+  messages: [{ role: "user", content: "Check my order status." }],
+});
+
+for await (const event of stream.events) {
+  if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
+    process.stdout.write(event.delta);
+  }
+}
+
+const result = await stream.final;
+```
+
+## React
+
+Use `onEvent` for observability or custom UI behavior.
+
+```tsx
+import { EventType } from "@better-agent/core";
+import { useAgent } from "@better-agent/client/react";
+import { client } from "@/better-agent/client";
+
+function Chat() {
+  const agent = useAgent(client.agent("support"), {
+    onEvent(event) {
+      if (event.type === EventType.TOOL_CALL_START) {
+        console.log("tool started", event.toolCallName);
+      }
+    },
+  });
+
+  return <ChatView messages={agent.messages} onSend={agent.sendMessage} />;
+}
+```
+
+See [AG-UI Events](https://docs.ag-ui.com/concepts/events) for the event
+protocol and [AG-UI Interrupts](https://docs.ag-ui.com/concepts/interrupts)
+for interrupt semantics.

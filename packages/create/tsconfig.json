@@ -8,6 +8,6 @@
         "outDir": ".types",
         "emitDeclarationOnly": true
     },
-    "include": ["src", "__tests__"],
+    "include": ["src"],
     "exclude": ["dist", ".types"]
 }

@@ -1,0 +1,137 @@
+---
+title: "Storage"
+description: "Persist runtime data for memory, runs, and streams."
+icon: server
+---
+
+# Storage
+
+Storage is the durable backing layer for Better Agent runtime data. Memory
+decides what conversation history to load. Storage decides where records are
+saved.
+
+Better Agent only calls the storage methods. Your adapter decides how those
+records map to tables, collections, keys, or another backing store. The names
+below are the storage areas Better Agent passes to `get`, `set`, `delete`, and
+`list`.
+
+## Add storage
+
+Configure storage at the app level.
+
+```typescript
+import { betterAgent, createInMemoryStorage } from "@better-agent/core";
+
+export const app = betterAgent({
+  storage: createInMemoryStorage(),
+  agents: [supportAgent],
+});
+```
+
+`createInMemoryStorage()` is useful for local development and tests. Use a
+database adapter in production.
+
+## Storage areas
+
+| Area             | Used for                                          |
+| ---------------- | ------------------------------------------------- |
+| `memoryThreads`  | Thread metadata and access scope.                 |
+| `memoryMessages` | Stored conversation messages.                     |
+| `runs`           | Run status, aborts, resume, and interrupted runs. |
+| `streams`        | Stream lifecycle records.                         |
+| `streamEvents`   | Stream replay and resume.                         |
+
+## Adapters
+
+Production adapters live in the database docs. Database adapters document the
+schema shape they need. Drizzle and Prisma also include generators.
+
+| Adapter                           | Package                 | Generate command                     |
+| --------------------------------- | ----------------------- | ------------------------------------ |
+| [Drizzle](/docs/database/drizzle) | `@better-agent/drizzle` | `npx @better-agent/drizzle generate` |
+| [Prisma](/docs/database/prisma)   | `@better-agent/prisma`  | `npx @better-agent/prisma generate`  |
+| [Kysely](/docs/database/kysely)   | `@better-agent/kysely`  | -                                    |
+| [Redis](/docs/database/redis)     | `@better-agent/redis`   | -                                    |
+
+See [Drizzle](/docs/database/drizzle), [Kysely](/docs/database/kysely),
+[Prisma](/docs/database/prisma), or [Redis](/docs/database/redis) for setup.
+
+## Custom storage
+
+Storage is a small interface. Implement it when you already have your own
+storage layer or want to map Better Agent records into your own schema.
+
+```typescript
+import type { BetterAgentStorage } from "@better-agent/core";
+
+const storage: BetterAgentStorage = {
+  async get(table, id) {
+    return db.get(table, id);
+  },
+  async set(table, id, value) {
+    await db.set(table, id, value);
+  },
+  async delete(table, id) {
+    await db.delete(table, id);
+  },
+  async list(table, query) {
+    const items = await db.list(table, {
+      where: query?.where,
+      orderBy: query?.orderBy,
+      limit: query?.take,
+    });
+
+    return { items };
+  },
+};
+```
+
+`list` supports `where`, `orderBy`, and `take`.
+
+## Composite storage
+
+Use composite storage when different runtime data should go to different
+backends.
+
+```typescript
+import { createCompositeStorage } from "@better-agent/core";
+
+const storage = createCompositeStorage({
+  domains: {
+    memory: postgresStorage,
+    streams: redisStorage,
+  },
+  default: postgresStorage,
+});
+```
+
+Domains group related storage areas:
+
+| Domain    | Areas                             |
+| --------- | --------------------------------- |
+| `memory`  | `memoryThreads`, `memoryMessages` |
+| `runs`    | `runs`                            |
+| `streams` | `streams`, `streamEvents`         |
+
+Route a single storage area when you need finer control.
+
+```typescript
+const storage = createCompositeStorage({
+  default: postgresStorage,
+  tables: {
+    streamEvents: redisStorage,
+  },
+});
+```
+
+Use `omit` to disable a storage domain.
+
+```typescript
+const storage = createCompositeStorage({
+  default: postgresStorage,
+  omit: ["streams"],
+});
+```
+
+Features that need an omitted area will behave as if that storage area is not
+configured.

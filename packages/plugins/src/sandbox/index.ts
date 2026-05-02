@@ -1,7 +1,7 @@
 export { createDaytonaSandboxClient } from "./daytona";
 export { createE2BSandboxClient } from "./e2b";
 export { createMemorySandboxSessionStore } from "./memory-store";
-export { sandboxPlugin } from "./plugin";
+export { sandbox } from "./plugin";
 export type {
     DaytonaSandboxClientConfig,
     E2BSandboxClientConfig,
@@ -18,7 +18,7 @@ export type {
     SandboxLifecycleClient,
     SandboxListFilesParams,
     SandboxMakeDirParams,
-    SandboxPluginConfig,
+    SandboxConfig,
     SandboxPreviewInfo,
     SandboxPTYClient,
     SandboxReadFileParams,

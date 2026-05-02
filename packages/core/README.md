@@ -1,3 +1,3 @@
 # @better-agent/core
 
-Core package for Better Agent.
+Core runtime package for Better Agent.

@@ -5,7 +5,6 @@ type PrimitiveTab = {
     code: string;
     filename: string;
     label: string;
-    language?: "ts" | "tsx" | "js" | "jsx" | "json" | "bash" | "sh" | "text";
 };
 
 const tabs: PrimitiveTab[] = [
@@ -14,111 +13,184 @@ const tabs: PrimitiveTab[] = [
         filename: "agents.ts",
         code: `export const supportAgent = defineAgent({
   name: "support",
-  model: openai.model("gpt-5.4"),
-  instruction: "Help users resolve account issues.",
-  tools: [searchDocsTool, createTicketTool],
+  model: openai("gpt-5.5"),
+  contextSchema: z.object({
+    userId: z.string(),
+    plan: z.enum(["free", "pro", "enterprise"]),
+  }),
+  instruction: ({ userId, plan }) =>
+    \`Resolve the user's issue with \${plan}-level detail. User: \${userId}.\`,
+  tools: [searchDocs, createTicket],
 });`,
     },
     {
         label: "Tools",
         filename: "tools.ts",
-        code: `export const searchDocsTool = defineTool({
-  name: "search_docs",
-  description: "Search product docs",
-  schema: z.object({
-    query: z.string(),
-    limit: z.number().default(5),
+        code: `export const createTicket = defineTool({
+  name: "create_ticket",
+  target: "server",
+  description: "Create a support ticket.",
+  inputSchema: z.object({
+    title: z.string(),
+    priority: z.enum(["low", "high"]),
   }),
-}).server(async ({ query, limit }) => {
-  return docs.search(query, limit);
+  async execute(input, { context }) {
+    return tickets.create({
+      ...input,
+      userId: context.userId,
+    });
+  },
+});`,
+    },
+    {
+        label: "Memory",
+        filename: "memory.ts",
+        code: `export const app = betterAgent({
+  storage: drizzleStorage({ db }),
+  memory: createMemory({ lastMessages: 20 }),
+  agents: [supportAgent],
+});
+
+const support = app.agent("support");
+
+await support.run({
+  threadId: "thread_123",
+  messages: [{ role: "user", content: "What did I ask before?" }],
+  context: { userId: "user_123", plan: "pro" },
+});`,
+    },
+    {
+        label: "State",
+        filename: "state.ts",
+        code: `const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  onStepFinish: ({ state }) => state.patch([
+    { op: "replace", path: "/step", value: "ready" },
+  ]),
+});
+
+const result = await app.agent("support").run({
+  messages,
+  context: { userId: "user_123", plan: "enterprise" },
+  state: {
+    step: "triage",
+    selectedTicketId: null,
+    draftReply: "",
+  },
+});
+
+console.log(result.state);`,
+    },
+    {
+        label: "MCP",
+        filename: "mcp.ts",
+        code: `const githubTools = mcpTools({
+  servers: {
+    github: {
+      transport: { type: "http", url: "https://api.githubcopilot.com/mcp" },
+    },
+  },
+});
+
+export const devAgent = defineAgent({
+  name: "dev",
+  model: openai("gpt-5.5"),
+  tools: [searchDocs, githubTools],
+});
+`,
+    },
+    {
+        label: "Auth",
+        filename: "auth.ts",
+        code: `export const auth = async ({ request }) => {
+  const session = await getSession(request);
+
+  return session && {
+    subject: session.user.id,
+    tenant: session.workspace.id,
+    scopes: session.scopes,
+  };
+};
+
+export const adminAgent = defineAgent({
+  name: "admin",
+  model: openai("gpt-5.5"),
+  access: ({ auth }) => auth?.scopes?.includes("admin") ?? false,
 });`,
     },
     {
         label: "Plugins",
         filename: "plugins.ts",
-        code: `export const auditPlugin = definePlugin({
-  id: "audit",
+        code: `export const tenantPolicy = definePlugin({
+  id: "tenant-policy",
   guards: [
-    async ({ request }) => {
-      if (!request.headers.get("x-api-key")) {
-        return new Response("API key required", { status: 401 });
-      }
-      return null;
+    ({ auth }) => {
+      if (auth?.tenant) return null;
+      return new Response("Workspace required", { status: 403 });
     },
   ],
+  onBeforeModelCall({ messages, context, setMessages }) {
+    setMessages([
+      { role: "system", content: \`Workspace: \${context.tenantId}\` },
+      ...messages,
+    ]);
+  },
+  onAfterToolCall({ toolName, status }) {
+    audit.write({ toolName, status });
+  },
 });`,
     },
     {
-        label: "App",
-        filename: "app.ts",
-        code: `export const app = betterAgent({
-  agents: [supportAgent],
-  tools: [searchDocsTool],
-  plugins: [auditPlugin],
-  baseURL: "/agents",
-  secret: "dev-secret",
-});`,
-    },
-    {
-        label: "Handler",
-        filename: "server.ts",
-        code: `export async function POST(request: Request) {
-  return ba.handler(request);
+        label: "AG-UI",
+        filename: "events.ts",
+        code: `const stream = await app.agent("support").stream({
+  messages: [{ role: "user", content: "Check my ticket." }],
+  context: { userId: "user_123" },
+});
+
+for await (const event of stream.events) {
+  if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
+    process.stdout.write(event.delta);
+  }
 }`,
     },
     {
         label: "Approvals",
         filename: "tools.ts",
-        code: `export const refundPaymentTool = defineTool({
+        code: `export const refundTool = defineTool({
   name: "refund_payment",
-  schema: z.object({
+  target: "server",
+  inputSchema: z.object({
     orderId: z.string(),
     amount: z.number(),
   }),
   approval: {
-    resolve: ({ input }) => ({
-      required: input.amount > 100,
-      timeoutMs: "1m",
-    }),
+    resolve: ({ toolInput }) =>
+      toolInput.amount > 100,
   },
-}).server(processRefund);`,
-    },
-    {
-        label: "Persistence",
-        filename: "persistence.ts",
-        code: `export const app = betterAgent({
-  agents: [supportAgent],
-  persistence: {
-    stream: createMemoryStreamStore(),
-    conversations: createMemoryConversationStore(),
-    runtimeState: createMemoryConversationRuntimeStateStore(),
+  async execute(input) {
+    return processRefund(input);
   },
 });`,
     },
 ];
 
-export default async function PrimitivesShowcase() {
-    const panels = await Promise.all(
-        tabs.map(async (tab) => (
-            <PrimitivesCodeBlock
-                code={tab.code}
-                filename={tab.filename}
-                key={tab.label}
-                language={tab.language}
-            />
-        )),
-    );
+export default function PrimitivesShowcase() {
+    const panels = tabs.map((tab) => (
+        <PrimitivesCodeBlock code={tab.code} filename={tab.filename} key={tab.label} />
+    ));
 
     return (
         <section className="relative mx-auto w-full max-w-[76rem] px-5 pt-16 pb-16 sm:px-8 sm:pt-20 sm:pb-20 md:pt-24 md:pb-24">
             <div className="mb-6 flex items-center gap-3 sm:mb-8">
-                <p className="text-[11px] font-medium tracking-[0.08em] text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] uppercase">
+                <p className="text-[11px] font-[360] tracking-[0.08em] text-[color:color-mix(in_srgb,var(--foreground)_36%,transparent)] uppercase">
                     Primitives
                 </p>
                 <div className="h-px flex-1 bg-[color:color-mix(in_srgb,var(--foreground)_8%,transparent)]" />
             </div>
 
-            <h2 className="mb-8 text-[clamp(1.25rem,3vw,1.75rem)] font-semibold leading-tight tracking-[-0.03em] text-[color:var(--foreground)] sm:mb-10">
+            <h2 className="mb-8 text-[clamp(1.25rem,3vw,1.75rem)] font-[420] leading-tight tracking-[-0.015em] text-[color:color-mix(in_srgb,var(--foreground)_84%,transparent)] sm:mb-10">
                 Build on the primitives you need
             </h2>
 

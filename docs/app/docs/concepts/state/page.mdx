@@ -1,0 +1,129 @@
+---
+title: "State"
+description: "Track working data during a run."
+icon: boxes
+---
+
+# State
+
+State is working data for a run or thread. Use it for progress, workflow status,
+selected records, drafts, and UI state that should change while the agent runs.
+
+| Concept | Use it for                                      |
+| ------- | ----------------------------------------------- |
+| State   | Current run or thread working data.             |
+| Memory  | Previous conversation messages and threads.     |
+| Storage | Where runtime records are saved.                |
+
+## Initial state
+
+Pass `state` when you start a run.
+
+```typescript
+const result = await app.agent("support").run({
+  messages,
+  state: {
+    step: "triage",
+    selectedOrderId: null,
+  },
+});
+
+console.log(result.state);
+```
+
+`result.state` contains the final state.
+
+## Update state
+
+Hooks receive state helpers.
+
+```typescript
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  onStep({ state }) {
+    state.set({
+      step: "looking_up_order",
+      selectedOrderId: state.get()?.selectedOrderId ?? null,
+    });
+  },
+});
+```
+
+Use `patch` for targeted updates.
+
+```typescript
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  onStepFinish({ state }) {
+    state.patch([
+      { op: "replace", path: "/step", value: "ready" },
+      { op: "add", path: "/completed", value: true },
+    ]);
+  },
+});
+```
+
+`patch` uses JSON Patch operations.
+
+## Tools
+
+Server tools can read and update state from the execution context.
+
+```typescript
+const selectOrder = defineTool({
+  name: "select_order",
+  target: "server",
+  description: "Select the order being handled.",
+  inputSchema: z.object({
+    orderId: z.string(),
+  }),
+  execute: async (input, { state }) => {
+    state.patch([{ op: "replace", path: "/selectedOrderId", value: input.orderId }]);
+    return { selected: true };
+  },
+});
+```
+
+See [Tools](/docs/concepts/tools) for tool configuration.
+
+## Streaming
+
+State updates stream as AG-UI events:
+
+| Event            | When it appears                    |
+| ---------------- | ---------------------------------- |
+| `STATE_SNAPSHOT` | State was replaced with `set`.     |
+| `STATE_DELTA`    | State was updated with `patch`.    |
+
+See [Events](/docs/concepts/events) for event handling and
+[AG-UI State](https://docs.ag-ui.com/concepts/state) for the state model.
+
+## Client state
+
+Framework hooks expose the latest state.
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  threadId: "thread_123",
+  initialState: {
+    step: "triage",
+    selectedOrderId: null,
+  },
+});
+
+return <Status value={agent.state?.step} />;
+```
+
+The hook updates `agent.state` as state events arrive.
+
+See [Client](/docs/concepts/client) for frontend usage.
+
+## Threads
+
+When memory and `threadId` are used, Better Agent stores the thread state and
+uses it on later runs. Passing a new `state` overrides the stored thread state
+for that run.
+
+See [Memory](/docs/concepts/memory) for threads and conversation history.
