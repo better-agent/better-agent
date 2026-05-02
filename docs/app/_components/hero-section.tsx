@@ -21,7 +21,7 @@ function ArrowUpRightIcon({ className }: { className?: string }) {
 }
 
 const ctaBaseClass =
-    "inline-flex h-[2.1rem] items-center justify-center whitespace-nowrap border px-4 font-sans text-[12.5px] font-medium leading-none tracking-[-0.01em] transition-colors";
+    "inline-flex h-[2.1rem] items-center justify-center whitespace-nowrap border px-4 font-sans text-[12.5px] font-[380] leading-none tracking-[-0.005em] transition-colors";
 
 export default function HeroSection() {
     return (
@@ -38,7 +38,7 @@ export default function HeroSection() {
                         className={`${ctaBaseClass} gap-1.5 rounded-none border-[color:var(--hero-primary-border)] bg-[color:var(--hero-primary-bg)] hover:bg-[color:var(--hero-primary-hover-bg)]`}
                         href="/docs"
                     >
-                        <span className="text-[color:var(--hero-primary-fg)] font-semibold">
+                        <span className="text-[color:var(--hero-primary-fg)] font-[430]">
                             Get Started
                         </span>
                         <span className="text-[color:var(--hero-primary-fg)]">
@@ -46,10 +46,10 @@ export default function HeroSection() {
                         </span>
                     </Link>
                     <Link
-                        className={`${ctaBaseClass} rounded-none border border-[color:var(--foreground)]/20 bg-transparent text-[color:var(--foreground)] hover:border-[color:var(--foreground)]/30 hover:bg-[color:var(--foreground)]/5 hover:text-[color:var(--foreground)]`}
-                        href="/cookbook"
+                        className={`${ctaBaseClass} rounded-none border border-[color:var(--foreground)]/16 bg-transparent text-[color:color-mix(in_srgb,var(--foreground)_74%,transparent)] hover:border-[color:var(--foreground)]/28 hover:bg-[color:var(--foreground)]/5 hover:text-[color:color-mix(in_srgb,var(--foreground)_82%,transparent)]`}
+                        href="/changelog"
                     >
-                        Open Cookbook
+                        Changelog
                     </Link>
                 </div>
             </div>

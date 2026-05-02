@@ -11,7 +11,6 @@ const markPageTeardown = () => {
     }
 };
 
-/** Installs one browser teardown tracker for refresh/navigation. */
 export const ensureBrowserTeardownTracking = (): void => {
     if (typeof window === "undefined") {
         return;
@@ -27,6 +26,5 @@ export const ensureBrowserTeardownTracking = (): void => {
     window.addEventListener("beforeunload", markPageTeardown);
 };
 
-/** Returns true while the current browser page is being torn down. */
 export const isBrowserPageTearingDown = (): boolean =>
     typeof window !== "undefined" && window.__baPageTeardown === true;

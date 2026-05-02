@@ -11,8 +11,20 @@ export type Release = {
     prerelease: boolean;
 };
 
+export type ReleaseGroup = {
+    key: string;
+    title: string;
+    releases: Release[];
+};
+
+type ParsedReleaseTag = {
+    major: number;
+    minor: number;
+};
+
 function processBodyHtml(html: string): string {
     let processed = html.replace(/<h5>\s*<a[^>]*>View changes on GitHub<\/a>\s*<\/h5>\s*$/i, "");
+
     processed = processed.replace(
         /(<a[^>]*class="user-mention[^"]*"[^>]*href="https:\/\/github\.com\/([^"]+)"[^>]*>@[^<]+<\/a>)/g,
         (_match, fullAnchor: string, username: string) => {
@@ -26,9 +38,54 @@ function processBodyHtml(html: string): string {
 
 function shouldIncludeRelease(tag: string, prerelease: boolean): boolean {
     if (!prerelease) return true;
-
-    // TODO: remove beta prerelease support here once we have stable releases.
     return /-beta(?:\.\d+)?$/i.test(tag);
+}
+
+function parseReleaseTag(tag: string): ParsedReleaseTag | null {
+    const match = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/i.exec(tag.trim());
+    if (!match) return null;
+
+    return {
+        major: Number(match[1]),
+        minor: Number(match[2]),
+    };
+}
+
+export function groupReleasesByMinor(releases: Release[]): ReleaseGroup[] {
+    const groups = new Map<string, ReleaseGroup>();
+
+    for (const release of releases) {
+        const parsed = parseReleaseTag(release.tag);
+        const key = parsed ? `v${parsed.major}.${parsed.minor}` : "Other";
+        const title = parsed ? `v${parsed.major}.${parsed.minor}.x` : "Other";
+
+        const group = groups.get(key) ?? {
+            key,
+            title,
+            releases: [],
+        };
+
+        group.releases.push(release);
+        groups.set(key, group);
+    }
+
+    return Array.from(groups.values())
+        .map((group) => ({
+            ...group,
+            releases: group.releases.sort(
+                (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+            ),
+        }))
+        .sort((a, b) => {
+            const aTag = parseReleaseTag(a.releases[0]?.tag ?? "");
+            const bTag = parseReleaseTag(b.releases[0]?.tag ?? "");
+
+            if (!aTag && !bTag) return a.title.localeCompare(b.title);
+            if (!aTag) return 1;
+            if (!bTag) return -1;
+
+            return bTag.major - aTag.major || bTag.minor - aTag.minor;
+        });
 }
 
 export async function fetchReleases(): Promise<Release[]> {
@@ -37,7 +94,6 @@ export async function fetchReleases(): Promise<Release[]> {
 
     while (true) {
         const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases?per_page=${PER_PAGE}&page=${page}`;
-
         const headers: Record<string, string> = {
             Accept: "application/vnd.github.html+json",
             "User-Agent": "better-agent-docs",
@@ -82,6 +138,7 @@ export async function fetchReleases(): Promise<Release[]> {
                 prerelease: release.prerelease,
             });
         }
+
         if (data.length < PER_PAGE) break;
         page++;
     }
@@ -90,8 +147,7 @@ export async function fetchReleases(): Promise<Release[]> {
 }
 
 export function formatReleaseDate(dateStr: string): string {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("en-US", {
+    return new Date(dateStr).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
         year: "numeric",

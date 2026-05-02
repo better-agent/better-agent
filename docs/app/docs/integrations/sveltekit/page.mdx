@@ -1,0 +1,264 @@
+---
+title: "SvelteKit"
+description: "Use Better Agent with SvelteKit."
+icon: svelte
+---
+
+# SvelteKit
+
+Use Better Agent in a SvelteKit app with the Svelte `createAgentChat` store.
+
+## Server
+
+```typescript
+// src/lib/better-agent/server.ts
+import { env } from "$env/dynamic/private";
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { createOpenAI } from "@better-agent/openai";
+
+const openai = createOpenAI({
+  apiKey: env.OPENAI_API_KEY,
+});
+
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help customers.",
+});
+
+const app = betterAgent({
+  agents: [supportAgent],
+  basePath: "/api/agents",
+});
+
+export default app;
+```
+
+## Route
+
+Create a rest endpoint and forward every method to `app.handler`.
+
+```typescript
+// src/routes/api/agents/[...path]/+server.ts
+import app from "$lib/better-agent/server";
+import type { RequestHandler } from "./$types";
+
+const handle: RequestHandler = ({ request }) => app.handler(request);
+
+export const GET = handle;
+export const POST = handle;
+export const PUT = handle;
+export const PATCH = handle;
+export const DELETE = handle;
+export const OPTIONS = handle;
+export const HEAD = handle;
+```
+
+## Client
+
+```typescript
+// src/lib/better-agent/client.ts
+import { createClient } from "@better-agent/client";
+import type app from "$lib/better-agent/server";
+
+export const client = createClient<typeof app>({
+  baseURL: "/api/agents",
+});
+```
+
+Keep `basePath`, the route path, and `baseURL` aligned.
+
+## Basic chat
+
+`createAgentChat` gives you a Svelte store plus actions.
+
+```svelte
+<script lang="ts">
+  import { createAgentChat } from "@better-agent/client/svelte";
+  import { client } from "$lib/better-agent/client";
+
+  const chat = createAgentChat(client.agent("support"), {
+    threadId: "main",
+  });
+
+  let input = $state("");
+</script>
+
+<form
+  onsubmit={(event) => {
+    event.preventDefault();
+    const message = input.trim();
+    if (!message) return;
+    input = "";
+    chat.sendMessage(message);
+  }}
+>
+  {#each $chat.messages as message (message.id)}
+    <p>{message.role}</p>
+  {/each}
+
+  {#if $chat.error}
+    <p>{$chat.error.message}</p>
+  {/if}
+
+  <input bind:value={input} />
+  <button disabled={$chat.isRunning}>Send</button>
+  <button type="button" onclick={() => chat.stop()} disabled={!$chat.isRunning}>
+    Stop
+  </button>
+</form>
+```
+
+## Threads
+
+Pass `threadId` to continue a saved conversation. Memory needs storage to
+survive reloads and deploys.
+
+```svelte
+<script lang="ts">
+  const chat = createAgentChat(client.agent("support"), {
+    threadId: "customer-123",
+  });
+</script>
+```
+
+## Load messages
+
+Memory-enabled agents expose helpers for loading and switching threads.
+
+```svelte
+<button onclick={() => chat.loadMessages()}>Reload</button>
+<button onclick={() => chat.selectThread("customer-456")}>
+  Switch thread
+</button>
+<button onclick={() => chat.clearThread()}>New thread</button>
+```
+
+## Context
+
+Use `context` for stable per-chat values. You can also pass context per
+message.
+
+```svelte
+<script lang="ts">
+  const chat = createAgentChat(client.agent("support"), {
+    context: {
+      userId: "user_123",
+      plan: "pro",
+    },
+  });
+
+  async function reviewPlan() {
+    await chat.sendMessage("Review my plan.", {
+      context: {
+        userId: "user_123",
+        plan: "enterprise",
+      },
+    });
+  }
+</script>
+```
+
+## Client tools
+
+Register handlers for tools that run in the browser. Matching client tools
+resolve and resume automatically.
+
+```svelte
+<script lang="ts">
+  const chat = createAgentChat(client.agent("support"), {
+    toolHandlers: {
+      confirm_address: async (input) => {
+        const confirmed = window.confirm(input.address);
+        return { confirmed };
+      },
+    },
+  });
+</script>
+```
+
+When no handler exists, use `pendingClientTools` to render your own UI.
+
+```svelte
+{#each $chat.pendingClientTools as tool (tool.interruptId)}
+  <p>{tool.toolName}</p>
+{/each}
+```
+
+## Approvals
+
+When a server tool waits for approval, render `pendingToolApprovals`.
+
+```svelte
+{#each $chat.pendingToolApprovals as approval (approval.interruptId)}
+  <div>
+    <p>{approval.toolName}</p>
+    <button onclick={() => chat.approveToolCall(approval.interruptId)}>
+      Approve
+    </button>
+    <button onclick={() => chat.rejectToolCall(approval.interruptId)}>
+      Reject
+    </button>
+  </div>
+{/each}
+```
+
+## Events
+
+Use `onEvent` for progress UI, logging, analytics, or custom event handling.
+
+```svelte
+<script lang="ts">
+  import { EventType } from "@better-agent/core";
+
+  const chat = createAgentChat(client.agent("support"), {
+    onEvent(event) {
+      if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
+        console.log(event.delta);
+      }
+    },
+  });
+</script>
+```
+
+## Finish and errors
+
+Use lifecycle callbacks for final messages, interrupts, aborts, and errors.
+
+```svelte
+<script lang="ts">
+  const chat = createAgentChat(client.agent("support"), {
+    onFinish(finish) {
+      console.log(finish.runId, finish.generatedMessages);
+    },
+    onError(error) {
+      console.error(error.code, error.message);
+    },
+  });
+</script>
+```
+
+## Resume
+
+Use `resume` when you have a saved run cursor.
+
+```svelte
+<script lang="ts">
+  const chat = createAgentChat(client.agent("support"), {
+    resume: {
+      runId: "run_123",
+      afterSequence: 42,
+    },
+  });
+
+  async function reconnect() {
+    await chat.resume();
+  }
+</script>
+```
+
+## Next
+
+See [Client](/docs/concepts/client), [Tools](/docs/concepts/tools),
+[Human in the Loop](/docs/concepts/hil), [Memory](/docs/concepts/memory),
+[Events](/docs/concepts/events), and [Storage](/docs/concepts/storage).

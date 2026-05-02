@@ -13,7 +13,7 @@
         "url": "https://github.com/better-agent/better-agent/issues"
     },
     "engines": {
-        "bun": ">=1.0.0",
+        "bun": ">=1.3.3",
         "node": ">=20"
     },
     "type": "module",
@@ -24,30 +24,71 @@
             "types": "./dist/index.d.mts",
             "import": "./dist/index.mjs"
         },
-        "./events": {
-            "types": "./dist/events/index.d.mts",
-            "import": "./dist/events/index.mjs"
+        "./app": {
+            "types": "./dist/app/index.d.mts",
+            "import": "./dist/app/index.mjs"
         },
-        "./providers": {
-            "types": "./dist/providers/index.d.mts",
-            "import": "./dist/providers/index.mjs"
+        "./agent": {
+            "types": "./dist/agent/index.d.mts",
+            "import": "./dist/agent/index.mjs"
+        },
+        "./ag-ui": {
+            "types": "./dist/ag-ui/index.d.mts",
+            "import": "./dist/ag-ui/index.mjs"
+        },
+        "./capabilities": {
+            "types": "./dist/capabilities/index.d.mts",
+            "import": "./dist/capabilities/index.mjs"
+        },
+        "./runtime": {
+            "types": "./dist/runtime/index.d.mts",
+            "import": "./dist/runtime/index.mjs"
+        },
+        "./storage": {
+            "types": "./dist/storage/index.d.mts",
+            "import": "./dist/storage/index.mjs"
+        },
+        "./models": {
+            "types": "./dist/models/index.d.mts",
+            "import": "./dist/models/index.mjs"
+        },
+        "./plugins": {
+            "types": "./dist/plugins/index.d.mts",
+            "import": "./dist/plugins/index.mjs"
         },
         "./mcp": {
             "types": "./dist/mcp/index.d.mts",
             "import": "./dist/mcp/index.mjs"
+        },
+        "./schema": {
+            "types": "./dist/schema/index.d.mts",
+            "import": "./dist/schema/index.mjs"
+        },
+        "./tools": {
+            "types": "./dist/tools/index.d.mts",
+            "import": "./dist/tools/index.mjs"
         }
     },
     "typesVersions": {
         "*": {
             ".": ["dist/index.d.mts"],
-            "events": ["dist/events/index.d.mts"],
-            "providers": ["dist/providers/index.d.mts"],
-            "mcp": ["dist/mcp/index.d.mts"]
+            "app": ["dist/app/index.d.mts"],
+            "agent": ["dist/agent/index.d.mts"],
+            "ag-ui": ["dist/ag-ui/index.d.mts"],
+            "capabilities": ["dist/capabilities/index.d.mts"],
+            "runtime": ["dist/runtime/index.d.mts"],
+            "storage": ["dist/storage/index.d.mts"],
+            "models": ["dist/models/index.d.mts"],
+            "plugins": ["dist/plugins/index.d.mts"],
+            "mcp": ["dist/mcp/index.d.mts"],
+            "schema": ["dist/schema/index.d.mts"],
+            "tools": ["dist/tools/index.d.mts"]
         }
     },
     "scripts": {
         "build": "bunx tsdown",
         "dev": "bunx tsdown --watch --no-clean",
+        "test": "bun test",
         "lint:package": "bunx publint run --strict",
         "lint:types": "npm_config_cache=../../.npm-cache bunx attw --profile esm-only --pack .",
         "lint": "bunx biome check .",
@@ -60,13 +101,18 @@
         "access": "public"
     },
     "dependencies": {
+        "@ag-ui/core": "^0.0.52",
         "@better-agent/shared": "workspace:*",
-        "ajv": "^8.17.1",
+        "@cfworker/json-schema": "^4.1.1",
+        "@modelcontextprotocol/client": "^2.0.0-alpha.2",
         "@standard-schema/spec": "1.1.0",
+        "ajv": "^8.17.1",
+        "better-call": "^2.0.3",
+        "fast-json-patch": "^3.1.1",
         "json-schema-to-ts": "^3.1.1"
     },
     "devDependencies": {
-        "@types/bun": "^1.2.18",
-        "@types/node": "^22.15.30"
+        "@types/bun": "^1.3.12",
+        "@types/node": "^22.19.17"
     }
 }

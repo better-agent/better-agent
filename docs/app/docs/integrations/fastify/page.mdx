@@ -1,0 +1,97 @@
+---
+title: "Fastify"
+description: "Use Better Agent with Fastify."
+icon: fastify
+---
+
+# Fastify
+
+Use the Fastify adapter to mount Better Agent, then connect from any frontend.
+
+## Install
+
+```bash
+npm install @better-agent/adapters
+```
+
+## Server
+
+```typescript
+// lib/better-agent/server.ts
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { openai } from "@better-agent/openai";
+
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help customers.",
+});
+
+const app = betterAgent({
+  agents: [supportAgent],
+  basePath: "/api/agents",
+});
+
+export default app;
+```
+
+## Route
+
+```typescript
+import Fastify from "fastify";
+import { toFastifyHandler } from "@better-agent/adapters/fastify";
+import app from "./lib/better-agent/server";
+
+const server = Fastify();
+
+server.all("/api/agents/*", toFastifyHandler(app));
+
+await server.listen({ port: 3000 });
+```
+
+## CORS
+
+If your frontend runs on a different origin, register CORS before the Better
+Agent route.
+
+```bash
+npm install @fastify/cors
+```
+
+```typescript
+import cors from "@fastify/cors";
+
+await server.register(cors, {
+  origin: "http://localhost:3000",
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+});
+```
+
+## Client
+
+```typescript
+import { createClient } from "@better-agent/client";
+import type app from "./lib/better-agent/server";
+
+export const client = createClient<typeof app>({
+  baseURL: "http://localhost:3000/api/agents",
+});
+```
+
+## Auth and headers
+
+Headers from the Fastify request are forwarded to Better Agent. Use
+[Auth](/docs/concepts/auth) to resolve identity from cookies, bearer tokens, or
+API keys.
+
+## Features
+
+The mounted route supports runs, streams, threads, interrupts, client tools, and
+approvals. Use [Client](/docs/concepts/client) from your frontend to call it.
+
+## Next
+
+See [Client](/docs/concepts/client), [Tools](/docs/concepts/tools),
+[Human in the Loop](/docs/concepts/hil), [Memory](/docs/concepts/memory),
+[Events](/docs/concepts/events), and [Storage](/docs/concepts/storage).

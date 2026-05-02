@@ -1,54 +1,45 @@
-export type FrameworkId =
-    | "generic"
-    | "nextjs"
-    | "remix"
-    | "sveltekit"
-    | "astro"
-    | "nuxt"
-    | "tanstack-start"
-    | "solidstart"
-    | "react-router";
+import type { Framework } from "./frameworks";
+import type { Plugin, Provider } from "./schema";
 
-export type InitMode = "create" | "patch";
-
-export type ProviderId = "anthropic" | "openai" | "xai";
-
-export type PluginId = "auth" | "ip-allowlist" | "logging" | "rate-limit" | "sandbox";
-
-export type SandboxClientId = "daytona" | "e2b";
-
-export interface DetectionResult {
-    framework: FrameworkId | null;
-    useSrcDir: boolean;
-    hasTypeScript: boolean;
-}
-
-export interface DirectoryState {
-    exists: boolean;
-    isEmpty: boolean;
-    hasPackageJson: boolean;
-}
-
-export interface InitOptions {
-    cwd?: string;
-    mode?: InitMode;
+export interface CreateConfig {
     name?: string;
-    framework?: FrameworkId;
-    providers?: ProviderId[];
-    plugins?: PluginId[];
-    sandboxClient?: SandboxClientId;
-    yes?: boolean;
-    starterUi?: boolean;
+    framework?: Framework;
+    providers?: Provider[];
+    plugins?: Plugin[];
+    install?: boolean;
 }
 
-export interface TargetFile {
-    label: string;
-    path: string;
-    content: string;
-    overwrite?: boolean;
-}
+export type PackageManager = "npm" | "yarn" | "pnpm" | "bun";
 
-export interface FileResult {
+export type ProviderTemplateConfig = {
     label: string;
-    kind: "created" | "exists" | "updated" | "skipped";
-}
+    identifier: string;
+    envOptions: {
+        envVar: string;
+        option: string;
+        envExampleValue?: string;
+    }[];
+    importPath: string;
+    factoryName: string;
+    modelExpression: string;
+};
+
+export type PluginTemplateConfig = {
+    importName: string;
+    createExpression: string;
+    envLines?: string[];
+    commentedImport?: string;
+    commentedRegistration?: string;
+};
+
+export type ServerTemplateData = {
+    providerImports: string;
+    providerInitializers: string;
+    agentDefinitions: string;
+    agentNames: string;
+    pluginImports: string;
+    pluginRegistrations: string;
+    commentedPluginRegistrations: string;
+    baseUrl: string;
+    providerEnvExample: string;
+};

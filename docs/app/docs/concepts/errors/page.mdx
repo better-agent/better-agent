@@ -1,0 +1,136 @@
+---
+title: "Errors"
+description: "Handle run, HTTP, stream, and validation errors."
+icon: shield
+---
+
+# Errors
+
+Better Agent uses structured errors across server APIs, HTTP routes, streams,
+and client hooks.
+
+## Error shape
+
+HTTP errors return problem details.
+
+```json
+{
+  "type": "https://better-agent.com/docs/concepts/errors#validation-failed",
+  "title": "Unprocessable Entity",
+  "status": 422,
+  "detail": "Invalid input.",
+  "code": "VALIDATION_FAILED",
+  "issues": []
+}
+```
+
+Use `status` for transport handling, `code` for app logic, and `detail` for the
+message.
+
+## Common codes
+
+| Code                | Meaning                           |
+| ------------------- | --------------------------------- |
+| `BAD_REQUEST`       | The request is malformed.         |
+| `VALIDATION_FAILED` | Input or output schema failed.    |
+| `UNAUTHORIZED`      | No valid caller identity.         |
+| `FORBIDDEN`         | The caller is not allowed.        |
+| `NOT_FOUND`         | Agent, run, or thread missing.    |
+| `CONFLICT`          | The request conflicts with state. |
+| `RATE_LIMITED`      | Too many requests.                |
+| `TIMEOUT`           | The operation timed out.          |
+| `ABORTED`           | The run was stopped.              |
+| `UPSTREAM_FAILED`   | A provider or upstream failed.    |
+| `INTERNAL`          | Unexpected server failure.        |
+
+## Server errors
+
+Server run calls throw `BetterAgentError` when the failure is known. Check
+`code` and `status` before deciding what to show or retry.
+
+```typescript
+import { BetterAgentError } from "@better-agent/core";
+
+try {
+  await app.agent("support").run({
+    messages: [{ role: "user", content: "Help me debug this." }],
+  });
+} catch (error) {
+  if (error instanceof BetterAgentError) {
+    console.error(error.status, error.code, error.message);
+    return;
+  }
+
+  throw error;
+}
+```
+
+## Client errors
+
+The browser client throws `BetterAgentClientError` for failed HTTP requests and
+failed stream frames.
+
+```typescript
+import { BetterAgentClientError } from "@better-agent/client";
+
+try {
+  await client.agent("support").run({
+    messages: [{ role: "user", content: "Create a ticket." }],
+  });
+} catch (error) {
+  if (error instanceof BetterAgentClientError) {
+    console.log(error.status, error.code, error.details);
+  }
+}
+```
+
+## React errors
+
+Framework hooks expose the latest error and accept `onError`.
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  onError(error) {
+    reportError(error.code, error.message);
+  },
+});
+
+if (agent.error) {
+  return <ErrorMessage error={agent.error} />;
+}
+```
+
+## Streaming errors
+
+Streaming runs emit AG-UI `RUN_ERROR` events when a run fails. Client streams
+also throw `BetterAgentClientError` when the HTTP stream itself fails.
+
+```typescript
+import { EventType } from "@better-agent/core";
+
+for await (const event of client.agent("support").stream({ messages })) {
+  if (event.type === EventType.RUN_ERROR) {
+    console.error(event.code, event.message);
+  }
+}
+```
+
+See [Events](/docs/concepts/events) for stream events.
+
+## Validation errors
+
+Schema failures use `VALIDATION_FAILED` and may include `issues`.
+
+Validation can come from agent context, tool input, resume input, or structured
+output.
+
+See [Agent](/docs/concepts/agent), [Tools](/docs/concepts/tools), and
+[Structured Output](/docs/concepts/structured-output) for schema setup.
+
+## Retry
+
+| Usually retry                  | Do not blindly retry                                      |
+| ------------------------------ | --------------------------------------------------------- |
+| `RATE_LIMITED`                 | `BAD_REQUEST`                                             |
+| `TIMEOUT`                      | `VALIDATION_FAILED`                                       |
+| `UPSTREAM_FAILED`              | `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`      |

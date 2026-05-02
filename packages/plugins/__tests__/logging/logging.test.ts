@@ -1,24 +1,23 @@
 import { describe, expect, test } from "bun:test";
-import { loggingPlugin } from "../../src";
+import { logging } from "../../src";
 
-describe("loggingPlugin", () => {
+describe("logging", () => {
     test("logs request metadata by default", async () => {
         const entries: unknown[] = [];
-        const plugin = loggingPlugin({
+        const plugin = logging({
             logger: {
                 info: (entry) => entries.push(entry),
             },
         });
 
         const response = await plugin.guards?.[0]?.({
-            mode: "run",
             agentName: "assistant",
+            auth: null,
             input: { prompt: "hello" },
             request: new Request("https://example.com", {
                 method: "POST",
                 headers: { authorization: "secret" },
             }),
-            plugins: [plugin],
         });
 
         expect(response).toBeNull();
@@ -38,7 +37,7 @@ describe("loggingPlugin", () => {
 
     test("logs tool errors through onAfterToolCall", async () => {
         const entries: unknown[] = [];
-        const plugin = loggingPlugin({
+        const plugin = logging({
             logger: {
                 error: (entry) => entries.push(entry),
             },
@@ -49,10 +48,13 @@ describe("loggingPlugin", () => {
             agentName: "assistant",
             toolName: "search",
             toolCallId: "tool-1",
-            args: { q: "test" },
+            input: { q: "test" },
+            status: "error",
             result: { ok: false },
             error: "boom",
+            setStatus: () => {},
             setResult: () => {},
+            setError: () => {},
         });
 
         expect(entries).toHaveLength(1);
@@ -64,7 +66,7 @@ describe("loggingPlugin", () => {
 
     test("respects include flags", async () => {
         const entries: unknown[] = [];
-        const plugin = loggingPlugin({
+        const plugin = logging({
             include: {
                 requests: false,
                 toolCalls: true,
@@ -81,8 +83,8 @@ describe("loggingPlugin", () => {
             agentName: "assistant",
             toolName: "search",
             toolCallId: "tool-1",
-            args: { q: "x" },
-            setArgs: () => {},
+            input: { q: "x" },
+            setInput: () => {},
         });
 
         expect(entries).toHaveLength(1);
@@ -91,7 +93,7 @@ describe("loggingPlugin", () => {
 
     test("supports body redaction and custom formatting", async () => {
         const entries: unknown[] = [];
-        const plugin = loggingPlugin({
+        const plugin = logging({
             redactBody: ({ phase }) => ({ phase, redacted: true }),
             format: (entry) => ({ formatted: true, entry }),
             logger: {
@@ -100,11 +102,10 @@ describe("loggingPlugin", () => {
         });
 
         await plugin.guards?.[0]?.({
-            mode: "run",
             agentName: "assistant",
+            auth: null,
             input: { secret: "value" },
             request: new Request("https://example.com", { method: "POST" }),
-            plugins: [plugin],
         });
 
         expect(entries).toHaveLength(1);
@@ -123,7 +124,7 @@ describe("loggingPlugin", () => {
     });
 
     test("swallows logger failures", async () => {
-        const plugin = loggingPlugin({
+        const plugin = logging({
             logger: {
                 info: () => {
                     throw new Error("logger failed");
@@ -132,52 +133,69 @@ describe("loggingPlugin", () => {
         });
 
         const response = await plugin.guards?.[0]?.({
-            mode: "run",
             agentName: "assistant",
+            auth: null,
             input: {},
             request: new Request("https://example.com"),
-            plugins: [plugin],
         });
 
         expect(response).toBeNull();
     });
 
-    test("logs save metadata using durable items", async () => {
+    test("applies custom header redaction", async () => {
         const entries: unknown[] = [];
-        const plugin = loggingPlugin({
-            level: "debug",
-            include: {
-                saves: true,
-                requests: false,
-                events: false,
-                steps: false,
-                modelCalls: false,
-                toolCalls: false,
+        const plugin = logging({
+            redactHeaders: ["x-session-token"],
+            logger: {
+                info: (entry) => entries.push(entry),
+            },
+        });
+
+        await plugin.guards?.[0]?.({
+            agentName: "assistant",
+            auth: null,
+            input: {},
+            request: new Request("https://example.com", {
+                headers: { "x-session-token": "session-1" },
+            }),
+        });
+
+        expect(entries[0]).toMatchObject({
+            data: {
+                headers: {
+                    "x-session-token": "[REDACTED]",
+                },
+            },
+        });
+    });
+
+    test("swallows formatter and redactor failures", async () => {
+        const entries: unknown[] = [];
+        const plugin = logging({
+            redactBody: () => {
+                throw new Error("redactor failed");
+            },
+            format: () => {
+                throw new Error("formatter failed");
             },
             logger: {
-                debug: (entry) => entries.push(entry),
+                info: (entry) => entries.push(entry),
             },
         });
 
-        await plugin.onBeforeSave?.({
-            runId: "run-1",
+        const response = await plugin.guards?.[0]?.({
             agentName: "assistant",
-            conversationId: "conv-1",
-            items: [
-                { type: "message", role: "user", content: "hello" },
-                { type: "message", role: "assistant", content: "hi" },
-                { type: "tool-call", callId: "tool-1", name: "search", arguments: "{}" },
-            ] as never,
-            setItems: () => {},
+            auth: null,
+            input: { prompt: "hello" },
+            request: new Request("https://example.com"),
         });
 
+        expect(response).toBeNull();
         expect(entries).toHaveLength(1);
         expect(entries[0]).toMatchObject({
-            event: "save.before",
-            conversationId: "conv-1",
+            event: "request.received",
             data: {
-                itemCount: 3,
-                messageCount: 2,
+                input: { prompt: "hello" },
             },
         });
     });

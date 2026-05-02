@@ -42,8 +42,9 @@
     "overrides": [
         {
             "include": [
-                "docs/app/_components/code-block.tsx",
-                "docs/app/_components/reliable-section.tsx"
+                "docs/app/_components/primitives-code-block.tsx",
+                "docs/app/changelog/page.tsx",
+                "docs/app/layout.tsx"
             ],
             "linter": {
                 "rules": {

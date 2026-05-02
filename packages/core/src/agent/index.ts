@@ -1,2 +1,2 @@
+export * from "./types";
 export * from "./define-agent";
-export type * from "./types";

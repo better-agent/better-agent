@@ -1,0 +1,58 @@
+---
+title: "Redis"
+description: "Redis adapter for Better Agent."
+icon: redis
+---
+
+# Redis
+
+Use Redis as the storage adapter for memory, runs, and streams.
+
+## Install
+
+```bash
+npm install @better-agent/redis redis
+```
+
+## Setup
+
+Pass a connected Redis client to `redisStorage`.
+
+```typescript
+import { betterAgent } from "@better-agent/core";
+import { redisStorage } from "@better-agent/redis";
+import { createClient } from "redis";
+
+const client = await createClient({
+  url: process.env.REDIS_URL,
+}).connect();
+
+export const app = betterAgent({
+  storage: redisStorage({
+    client,
+  }),
+  agents: [supportAgent],
+});
+```
+
+## Options
+
+| Option       | Description                                      |
+| ------------ | ------------------------------------------------ |
+| `client`     | Connected Redis client.                          |
+| `base`       | Base key namespace.                              |
+| `prefixes`   | Per-model key prefixes.                          |
+| `transforms` | Per-field encode and decode hooks for stored data. |
+
+## Notes
+
+Redis works well for run resume and stream replay when Redis durability is
+enabled.
+
+The adapter can use `redis` or `@upstash/redis`.
+
+For Upstash, install `@upstash/redis` instead of `redis`.
+
+See [Storage](/docs/concepts/storage) for what Better Agent stores.
+
+Powered by [Farming Labs ORM](https://orm.farming-labs.dev/docs).

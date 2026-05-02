@@ -14,10 +14,11 @@
         "typecheck": "turbo run typecheck --filter='./packages/*'",
         "format": "biome format --write .",
         "clean": "turbo clean && rimraf \"node_modules\" \"**/node_modules\" \"**/dist\" \".turbo\"",
-        "bump": "bumpp",
-        "release": "bun run build && bumpp --no-commit --no-push --no-tag",
-        "release:beta": "bun run build && bumpp --preid beta --release prerelease --no-commit --no-push --no-tag",
-        "release:canary": "bun run build && bumpp --preid canary --release prerelease --no-commit --no-push --no-tag"
+        "bump": "bumpp --recursive --no-push --execute \"bun install --force\"",
+        "release:prepare": "bumpp --recursive --no-commit --no-push --no-tag --execute \"bun install --force\"",
+        "release": "bumpp --recursive --no-push --execute \"bun install --force\"",
+        "release:beta": "bumpp prerelease --preid beta --recursive --no-push --execute \"bun install --force\"",
+        "release:check": "bun install --frozen-lockfile && bun run check"
     },
     "devDependencies": {
         "@arethetypeswrong/cli": "^0.18.2",
@@ -30,15 +31,9 @@
         "turbo": "^2.6.0",
         "typescript": "5.6.3"
     },
-    "workspaces": ["packages/*", "examples/*", "docs"],
+    "workspaces": ["packages/*", "examples/*"],
     "engines": {
         "node": ">=20",
         "bun": ">=1.3.3"
-    },
-    "dependencies": {
-        "@better-agent/client": "workspace:*",
-        "@better-agent/core": "workspace:*",
-        "@better-agent/plugins": "workspace:*",
-        "@better-agent/providers": "workspace:*"
     }
 }

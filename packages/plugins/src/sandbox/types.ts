@@ -227,7 +227,7 @@ export interface SandboxDesktopClient {
     }>;
 }
 
-/** Sandbox client used by `sandboxPlugin`. */
+/** Sandbox client used by `sandbox`. */
 export interface SandboxClient {
     /** Provider name. */
     provider?: string;
@@ -281,8 +281,8 @@ export interface SandboxSessionKeyContext {
     runId: string;
     /** Agent name. */
     agentName: string;
-    /** Conversation id, if available. */
-    conversationId?: string;
+    /** Thread id, if available. */
+    threadId?: string;
     /** Tool name, for example `sandbox_exec`. */
     toolName: string;
 }
@@ -299,8 +299,8 @@ export interface SandboxToolApprovals {
     killSandbox?: ToolApprovalConfig;
 }
 
-/** Configuration for `sandboxPlugin`. */
-export interface SandboxPluginConfig {
+/** Configuration for `sandbox`. */
+export interface SandboxConfig {
     /** Plugin id. */
     id?: string;
     /** Tool name prefix. Defaults to `"sandbox"`. */
@@ -312,7 +312,7 @@ export interface SandboxPluginConfig {
     /**
      * Controls sandbox reuse for each tool call.
      *
-     * When omitted, the plugin reuses one sandbox per `conversationId`.
+     * When omitted, the plugin reuses one sandbox per `threadId`.
      * Return a non-empty string to reuse a sandbox under that key.
      * Return `null` or `undefined` to disable reuse for that call.
      */

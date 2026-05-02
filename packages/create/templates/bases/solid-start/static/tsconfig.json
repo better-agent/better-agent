@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "allowSyntheticDefaultImports": true,
+    "types": ["vinxi/types/client", "@solidjs/start/env"],
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true
+  }
+}

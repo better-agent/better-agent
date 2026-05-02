@@ -1,0 +1,316 @@
+---
+title: "Tools"
+description: "Let agents call functions during a run."
+icon: wrench
+---
+
+# Tools
+
+A tool is a function the model can call during a run. Create local tools with
+`defineTool`, then add them to an agent's `tools` array.
+
+```typescript
+import { defineTool } from "@better-agent/core";
+import { z } from "zod";
+
+const getWeather = defineTool({
+  name: "get_weather",
+  target: "server",
+  description: "Get the current weather for a location.",
+  inputSchema: z.object({
+    location: z.string(),
+  }),
+  async execute({ location }) {
+    const res = await fetch(`https://api.weather.com/${location}`);
+    return res.json();
+  },
+});
+```
+
+## Server tools
+
+Server tools run in your backend. Set `target: "server"` and provide an
+`execute` function.
+
+```typescript
+const createTicket = defineTool({
+  name: "create_ticket",
+  target: "server",
+  description: "Create a support ticket.",
+  inputSchema: z.object({
+    subject: z.string(),
+    body: z.string(),
+    priority: z.enum(["low", "medium", "high"]),
+  }),
+  async execute(input, ctx) {
+    const ticket = await db.tickets.create({
+      ...input,
+      createdBy: ctx.agentName,
+      runId: ctx.runId,
+    });
+    return { ticketId: ticket.id };
+  },
+});
+```
+
+`execute` receives validated input and a context object with run metadata,
+abort signal, and state helpers.
+
+## Client tools
+
+Client tools run in the user's app. They do not define `execute`. The run
+pauses until the client returns a result.
+
+```typescript
+const confirmAddress = defineTool({
+  name: "confirm_address",
+  target: "client",
+  description: "Ask the user to confirm their shipping address.",
+  inputSchema: z.object({
+    address: z.string(),
+    orderId: z.string(),
+  }),
+});
+```
+
+Client tool pauses use AG-UI interrupts. Each interrupt has an id and response
+schema, so it can be stored, rendered later, and resumed across requests.
+
+When the model calls a client tool, the run returns an interrupt. Manual resume
+requires a `threadId` and [Storage](/docs/concepts/storage).
+
+```typescript
+const threadId = "thread_123";
+
+const result = await app.agent("support").run({ threadId, messages });
+
+if (result.outcome === "interrupt") {
+  const interrupt = result.interrupts[0];
+
+  await app.agent("support").run({
+    threadId,
+    resume: [
+      {
+        interruptId: interrupt.id,
+        status: "resolved",
+        payload: { status: "success", result: { confirmed: true } },
+      },
+    ],
+  });
+}
+```
+
+In React, `useAgent` can handle client tools automatically with
+`toolHandlers`:
+
+```tsx
+import { useAgent } from "@better-agent/client/react";
+import { client } from "@/better-agent/client";
+
+function AddressConfirmation() {
+  const agent = useAgent(client.agent("support"), {
+    threadId: "thread_123",
+    toolHandlers: {
+      confirm_address: async (input) => {
+        const confirmed = await openAddressDialog(input);
+        return { confirmed };
+      },
+    },
+  });
+
+  return <Chat messages={agent.messages} onSend={agent.sendMessage} />;
+}
+```
+
+When no handler is registered, the hook exposes `pendingClientTools` so you can
+render custom UI for the pending tool.
+
+## Input and output schemas
+
+Every tool needs an `inputSchema`. It can be Zod, any
+[Standard Schema](https://github.com/standard-schema/standard-schema), or plain
+JSON Schema. Use `outputSchema` when the tool result should be validated too.
+
+```typescript
+const extractEntities = defineTool({
+  name: "extract_entities",
+  target: "server",
+  description: "Extract named entities from text.",
+  inputSchema: z.object({ text: z.string() }),
+  outputSchema: z.object({
+    entities: z.array(
+      z.object({
+        name: z.string(),
+        type: z.enum(["person", "org", "location"]),
+      }),
+    ),
+  }),
+  async execute({ text }) {
+    return { entities: await ner(text) };
+  },
+});
+```
+
+Other schema options:
+
+| Option          | Use                                                              |
+| --------------- | ---------------------------------------------------------------- |
+| `strict`        | Ask supported providers to produce only valid tool arguments.    |
+| `toModelOutput` | Send a smaller or safer version of the result back to the model. |
+
+```typescript
+const searchDocs = defineTool({
+  name: "search_docs",
+  target: "server",
+  description: "Search the knowledge base.",
+  inputSchema: z.object({ query: z.string() }),
+  toModelOutput(result) {
+    return result.hits.map((h) => ({ title: h.title, snippet: h.snippet }));
+  },
+  async execute({ query }) {
+    return await knowledgeBase.search(query);
+  },
+});
+```
+
+## Approval
+
+Use `approval` when a tool needs human confirmation before it runs.
+
+```typescript
+const deleteTool = defineTool({
+  name: "delete_account",
+  target: "server",
+  description: "Permanently delete a user account.",
+  inputSchema: z.object({ userId: z.string() }),
+  approval: { enabled: true },
+  async execute({ userId }) {
+    await db.users.delete(userId);
+    return { deleted: true };
+  },
+});
+```
+
+Use `resolve` for conditional approval:
+
+```typescript
+const refundTool = defineTool({
+  name: "refund",
+  target: "server",
+  description: "Issue a refund.",
+  inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
+  approval: {
+    resolve: ({ toolInput }) => toolInput.amount > 50,
+  },
+  async execute({ orderId, amount }) {
+    return stripe.refunds.create({ payment_intent: orderId, amount });
+  },
+});
+```
+
+See [Human in the Loop](/docs/concepts/hil) for approvals, timeouts, and
+resuming runs.
+
+## Error handling
+
+By default, tool errors are returned to the model as tool results. Use
+`toolErrorMode: "throw"` when a tool failure should abort the run.
+
+```typescript
+const criticalTool = defineTool({
+  name: "charge_payment",
+  target: "server",
+  description: "Charge a payment method.",
+  inputSchema: z.object({ amount: z.number(), paymentMethodId: z.string() }),
+  toolErrorMode: "throw",
+  async execute(input) {
+    return await payments.charge(input);
+  },
+});
+```
+
+## Dynamic tools
+
+An agent's `tools` option can be a function. Use it to choose tools from request
+context.
+
+```typescript
+const agent = defineAgent({
+  name: "assistant",
+  model: openai("gpt-5.5"),
+  instruction: "You help users manage their workspace.",
+  contextSchema: z.object({
+    role: z.enum(["member", "admin"]),
+  }),
+  tools: (ctx) => {
+    const base = [readTool, searchTool];
+    if (ctx.role === "admin") {
+      base.push(deleteTool, configTool);
+    }
+    return base;
+  },
+});
+```
+
+The function can be async. See [Agent](/docs/concepts/agent) for the full agent
+definition.
+
+## MCP tools
+
+`mcpTools` connects to one or more
+[Model Context Protocol](https://modelcontextprotocol.io/) servers and exposes
+their tools to an agent.
+
+```typescript
+import { mcpTools } from "@better-agent/core/mcp";
+
+const mcp = mcpTools({
+  servers: {
+    github: {
+      transport: {
+        type: "http",
+        url: "https://api.githubcopilot.com/mcp",
+      },
+    },
+    filesystem: {
+      transport: {
+        type: "stdio",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem", "./data"],
+      },
+    },
+  },
+});
+
+const agent = defineAgent({
+  name: "dev",
+  model: openai("gpt-5.5"),
+  instruction: "You help with development tasks.",
+  tools: async (ctx) => [searchTool, ...(await mcp(ctx))],
+});
+```
+
+See [MCP](/docs/concepts/mcp) for transports, namespacing, and reloads.
+
+## Provider tools
+
+Some providers expose built-in tools, such as web search. Add them to `tools`
+with the provider helper.
+
+```typescript
+import { openai } from "@better-agent/openai";
+
+const agent = defineAgent({
+  name: "researcher",
+  model: openai("gpt-5.5"),
+  instruction: "Research the topic using web search.",
+  tools: [
+    openai.tools.webSearch({
+      searchContextSize: "medium",
+    }),
+    summarizeTool,
+  ],
+});
+```
+
+See [OpenAI](/docs/providers/openai) for provider tool setup.

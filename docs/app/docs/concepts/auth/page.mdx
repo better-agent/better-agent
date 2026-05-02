@@ -1,0 +1,225 @@
+---
+title: "Auth"
+description: "Resolve request identity for agents, memory, and plugins."
+icon: shield
+---
+
+# Auth
+
+Auth identifies the caller for each HTTP request. Better Agent uses that
+identity for agent access, memory scope, plugin guards, and plugin endpoints.
+
+## Add auth
+
+Set `auth` on the app.
+
+```typescript
+import { betterAgent } from "@better-agent/core";
+
+export const app = betterAgent({
+  auth: async ({ request }) => {
+    const token = request.headers.get("authorization")?.replace("Bearer ", "");
+    const session = token ? await getSession(token) : null;
+
+    if (!session) {
+      return null;
+    }
+
+    return {
+      subject: session.userId,
+      tenant: session.workspaceId,
+      scopes: session.scopes,
+      claims: { email: session.email },
+    };
+  },
+  agents: [supportAgent],
+});
+```
+
+Return `null` when the request is not authenticated.
+
+## Auth context
+
+The resolver returns:
+
+| Field | Use |
+| --- | --- |
+| `subject` | Required user, account, or API-client id. |
+| `tenant` | Optional workspace, organization, or tenant id. |
+| `scopes` | Optional permissions for access checks. |
+| `claims` | Optional extra data from your auth system. |
+
+Better Agent does not own your auth provider. The resolver can call Better Auth,
+Auth.js, Clerk, your session store, JWT verification, or any other auth system.
+It can also verify an Agent Auth Protocol request and map the verified agent
+session into the same auth context.
+
+## Agent access
+
+`access` controls who can call an agent over HTTP.
+
+```typescript
+const adminAgent = defineAgent({
+  name: "admin",
+  model: openai("gpt-5.5"),
+  instruction: "You help admins manage the workspace.",
+  access: ({ auth }) => auth?.scopes?.includes("admin") ?? false,
+});
+```
+
+Access options:
+
+| Value | Behavior |
+| --- | --- |
+| `"public"` | Anyone can call the agent. |
+| `"authenticated"` | Requires a non-null auth context. |
+| `(ctx) => boolean` | Custom check with `{ auth, agentName, request }`. |
+
+When app `auth` is configured and an agent does not set `access`, it defaults to
+`"authenticated"`. Without app `auth`, agents default to `"public"`.
+
+## Public agents
+
+Set `access: "public"` for agents that should be callable without identity.
+
+```typescript
+const faqAgent = defineAgent({
+  name: "faq",
+  model: openai("gpt-5.5"),
+  instruction: "Answer public product questions.",
+  access: "public",
+});
+```
+
+## Memory scope
+
+When app `auth` is configured, remote memory routes only expose threads in the
+request's scope. By default, the scope is based on `subject` and `tenant`.
+
+```typescript
+import { createMemory } from "@better-agent/core";
+
+createMemory({
+  scope: ({ auth }) =>
+    auth ? `tenant:${auth.tenant}:subject:${auth.subject}` : null,
+});
+```
+
+See [Memory](/docs/concepts/memory) for thread setup.
+
+## Plugins
+
+Plugin guards and endpoints receive the resolved `auth` context.
+
+```typescript
+const workspaceGuard = definePlugin({
+  id: "workspace-guard",
+  guards: [
+    async ({ auth }) => {
+      return auth ? null : new Response("Unauthorized", { status: 401 });
+    },
+  ],
+});
+```
+
+See [Plugins](/docs/concepts/plugins) for guards and endpoints.
+
+## Agent Auth Protocol
+
+[Agent Auth Protocol](https://agentauthprotocol.com/) gives each runtime agent
+its own identity, key-backed authentication, capability grants, and lifecycle.
+Use it when external agents or agent hosts need scoped access to your service.
+
+Better Agent does not require Agent Auth. For most apps, regular user/session
+auth is enough. If you use an Agent Auth implementation, verify the incoming
+agent request in `auth` and map active capability grants into `scopes`.
+
+```typescript
+import { verifyAgentRequest } from "@better-auth/agent-auth";
+import { betterAgent } from "@better-agent/core";
+import { auth } from "@/auth";
+
+export const app = betterAgent({
+  auth: async ({ request }) => {
+    const agentSession = await verifyAgentRequest(request, auth);
+
+    if (!agentSession) {
+      return null;
+    }
+
+    const scopes = agentSession.agent.capabilityGrants
+      .filter((grant) => grant.status === "active")
+      .map((grant) => grant.capability);
+
+    return {
+      subject: agentSession.agent.id,
+      tenant: agentSession.host.id,
+      scopes,
+      claims: {
+        agentAuth: agentSession,
+        userId: agentSession.user?.id,
+      },
+    };
+  },
+  agents: [supportAgent],
+});
+```
+
+Then use `access` to require a capability before a caller can run an agent.
+
+```typescript
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help customers.",
+  access: ({ auth }) => auth?.scopes?.includes("support_chat") ?? false,
+});
+```
+
+Agent Auth implementations still own the protocol endpoints for discovery, host
+registration, agent registration, approval, capability grants, and lifecycle.
+Better Agent consumes the verified identity and capabilities through `auth`.
+
+## Errors
+
+Missing identity returns `401 Unauthorized` when authentication is required.
+Failed custom access checks return `403 Forbidden`.
+
+## Examples
+
+Your resolver can call any auth system. Return `null` when no valid session
+exists.
+
+### Better Auth
+
+```typescript
+auth: async ({ request }) => {
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+
+  return session
+    ? {
+        subject: session.user.id,
+        claims: { email: session.user.email },
+      }
+    : null;
+},
+```
+
+### Custom
+
+```typescript
+auth: async ({ request }) => {
+  const token = request.headers.get("authorization")?.replace("Bearer ", "");
+  const claims = token ? await verifyJwt(token) : null;
+
+  return claims
+    ? {
+        subject: claims.sub,
+        tenant: claims.org_id,
+        scopes: claims.scopes,
+      }
+    : null;
+},
+```

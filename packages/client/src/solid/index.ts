@@ -1,6 +1,2 @@
 export { useAgent } from "./useAgent";
-export type {
-    UseAgentOptions,
-    UseAgentResult,
-    SetMessagesInput,
-} from "./types";
+export type { MaybeAccessor, UseAgentOptions, UseAgentResult } from "./types";

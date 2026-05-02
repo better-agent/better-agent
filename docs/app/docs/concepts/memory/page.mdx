@@ -1,0 +1,174 @@
+---
+title: "Memory"
+description: "Let agents remember conversations across runs."
+icon: brain
+---
+
+# Memory
+
+Memory lets an agent continue a conversation. When you pass the same `threadId`
+to later runs, Better Agent loads previous messages from that thread before the
+new input.
+
+Memory needs storage to survive across requests and deploys.
+
+## Add memory
+
+Configure memory with `createMemory`.
+
+```typescript
+import { betterAgent, createMemory } from "@better-agent/core";
+
+export const app = betterAgent({
+  storage,
+  memory: createMemory({ lastMessages: 20 }),
+  agents: [supportAgent],
+});
+```
+
+Use a `threadId` when you run the agent.
+
+```typescript
+await app.agent("support").run({
+  threadId: "thread_123",
+  messages: [{ role: "user", content: "My order is late." }],
+});
+
+await app.agent("support").run({
+  threadId: "thread_123",
+  messages: [{ role: "user", content: "What did I ask about?" }],
+});
+```
+
+The second run includes recent messages from `thread_123`.
+
+## Storage
+
+Memory stores threads and messages in the app's `storage`.
+
+```typescript
+import { createInMemoryStorage } from "@better-agent/core";
+
+const storage = createInMemoryStorage();
+```
+
+`createInMemoryStorage()` is useful for local development and tests. For
+production, use a database adapter.
+
+See [Storage](/docs/concepts/storage) for runtime storage. For production
+adapters, see [Drizzle](/docs/database/drizzle), [Kysely](/docs/database/kysely),
+[Prisma](/docs/database/prisma), or [Redis](/docs/database/redis).
+
+You can also bind storage directly to a memory instance.
+
+```typescript
+const memory = createMemory({
+  storage,
+  lastMessages: 20,
+});
+```
+
+## Agent memory
+
+App-level memory applies to every agent. Set memory on an agent when it needs a
+different history window.
+
+```typescript
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help customers.",
+  memory: createMemory({ lastMessages: 50 }),
+});
+```
+
+Use `memory: false` when an agent should ignore app-level memory.
+
+```typescript
+const classifier = defineAgent({
+  name: "classifier",
+  model: openai("gpt-5.5"),
+  instruction: "Classify the message.",
+  memory: false,
+});
+```
+
+## History window
+
+`lastMessages` controls how many previous messages are loaded into the next run.
+It must be a positive integer.
+
+```typescript
+createMemory({ lastMessages: 10 });
+```
+
+Use a smaller window for fast classifiers and a larger window for chat agents.
+
+## Memory options
+
+`createMemory` accepts:
+
+| Option | Use |
+| --- | --- |
+| `storage` | Bind this memory instance to a specific storage adapter. |
+| `lastMessages` | Limit how many previous messages are loaded. |
+| `scope` | Isolate remote thread access by tenant, user, or another key. |
+| `generateId` | Customize thread and stored message ids. |
+
+## Thread scope
+
+Use `scope` to isolate thread access for authenticated HTTP requests.
+
+```typescript
+createMemory({
+  lastMessages: 20,
+  scope: ({ auth }) =>
+    auth ? `tenant:${auth.tenant}:subject:${auth.subject}` : null,
+});
+```
+
+When app `auth` is configured, remote thread endpoints only expose threads in
+the resolved scope. If you do not provide `scope`, Better Agent uses the
+authenticated subject and tenant.
+
+## Custom ids
+
+Use `generateId` when thread or message record ids need to follow your own
+format.
+
+```typescript
+const memory = createMemory({
+  generateId(kind) {
+    return `${kind}_${crypto.randomUUID()}`;
+  },
+});
+```
+
+## Manage threads
+
+Agent handles expose memory helpers when memory is configured.
+
+```typescript
+const memory = app.agent("support").memory;
+
+const threads = await memory.threads.list({ limit: 20 });
+const messages = await memory.messages.list({ threadId: "thread_123" });
+```
+
+Delete a thread when the conversation should be removed.
+
+```typescript
+await memory.threads.delete("thread_123");
+```
+
+Fork a thread to branch a conversation.
+
+```typescript
+await memory.fork("thread_copy", "thread_123");
+```
+
+Pass a transform to copy only the messages you want.
+
+```typescript
+await memory.fork("short_copy", "thread_123", (messages) => messages.slice(-10));
+```

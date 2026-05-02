@@ -1,0 +1,109 @@
+---
+title: "NestJS"
+description: "Use Better Agent with NestJS."
+icon: nestjs
+---
+
+# NestJS
+
+Mount Better Agent through Nest's underlying HTTP adapter. This example uses
+Nest with Express.
+
+## Install
+
+```bash
+npm install @better-agent/adapters
+```
+
+## Service
+
+```typescript
+// server.service.ts
+import { Injectable } from "@nestjs/common";
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { openai } from "@better-agent/openai";
+
+@Injectable()
+export class ServerService {
+  readonly app = betterAgent({
+    agents: [
+      defineAgent({
+        name: "support",
+        model: openai("gpt-5.5"),
+        instruction: "You help customers.",
+      }),
+    ],
+    basePath: "/api/agents",
+  });
+}
+```
+
+## Bootstrap
+
+```typescript
+// main.ts
+import { NestFactory } from "@nestjs/core";
+import { toExpressHandler } from "@better-agent/adapters/express";
+import type { Express } from "express";
+import { AppModule } from "./app.module";
+import { ServerService } from "./server.service";
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  const expressApp = app.getHttpAdapter().getInstance() as Express;
+  const serverService = app.get(ServerService);
+
+  expressApp.use("/api/agents", toExpressHandler(serverService.app));
+
+  await app.listen(3000);
+}
+
+bootstrap();
+```
+
+## Module
+
+```typescript
+import { Module } from "@nestjs/common";
+import { ServerService } from "./server.service";
+
+@Module({
+  providers: [ServerService],
+})
+export class AppModule {}
+```
+
+## Client
+
+```typescript
+import { createClient } from "@better-agent/client";
+import type { ServerService } from "./server.service";
+
+type App = ServerService["app"];
+
+export const client = createClient<App>({
+  baseURL: "http://localhost:3000/api/agents",
+});
+```
+
+## Auth and headers
+
+Headers from the underlying Express request are forwarded to Better Agent. Use
+[Auth](/docs/concepts/auth) to resolve identity from cookies, bearer tokens, or
+API keys.
+
+## Features
+
+The mounted route supports runs, streams, threads, interrupts, client tools, and
+approvals. Use [Client](/docs/concepts/client) from your frontend to call it.
+
+## Fastify
+
+If your Nest app uses Fastify, mount Better Agent with
+`toFastifyHandler` instead.
+
+## Next
+
+See [Client](/docs/concepts/client), [Tools](/docs/concepts/tools),
+[Human in the Loop](/docs/concepts/hil), [Memory](/docs/concepts/memory),
+[Events](/docs/concepts/events), and [Storage](/docs/concepts/storage).

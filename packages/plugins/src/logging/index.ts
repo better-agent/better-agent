@@ -1,2 +1,2 @@
 export type * from "./types";
-export { loggingPlugin } from "./plugin";
+export { logging } from "./plugin";

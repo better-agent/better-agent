@@ -1,0 +1,171 @@
+---
+title: "Remix"
+description: "Use Better Agent with Remix."
+icon: remix
+---
+
+# Remix
+
+Use Better Agent in Remix with a resource route and the React `useAgent` hook.
+
+## Server
+
+```typescript
+// app/lib/better-agent/server.ts
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { openai } from "@better-agent/openai";
+
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help customers.",
+});
+
+const app = betterAgent({
+  agents: [supportAgent],
+  basePath: "/api/agents",
+});
+
+export default app;
+```
+
+## Route
+
+```typescript
+// app/routes/api.agents.$.ts
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import app from "../lib/better-agent/server";
+
+export const loader = ({ request }: LoaderFunctionArgs) => app.handler(request);
+export const action = ({ request }: ActionFunctionArgs) => app.handler(request);
+```
+
+For cross-origin clients, handle CORS and preflight at your Remix server or
+deployment.
+
+## Client
+
+```typescript
+// app/lib/better-agent/client.ts
+import { createClient } from "@better-agent/client";
+import type app from "./server";
+
+export const client = createClient<typeof app>({
+  baseURL: "/api/agents",
+});
+```
+
+## Basic chat
+
+```tsx
+import { useAgent } from "@better-agent/client/react";
+import { useState } from "react";
+import { client } from "../lib/better-agent/client";
+
+export default function ChatPage() {
+  const [input, setInput] = useState("");
+  const agent = useAgent(client.agent("support"), {
+    threadId: "main",
+  });
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const message = input.trim();
+        if (!message) return;
+        setInput("");
+        agent.sendMessage(message);
+      }}
+    >
+      {agent.messages.map((message) => (
+        <p key={message.id}>{message.role}</p>
+      ))}
+      <input value={input} onChange={(event) => setInput(event.target.value)} />
+      <button disabled={agent.isRunning}>Send</button>
+      <button type="button" onClick={() => agent.stop()} disabled={!agent.isRunning}>
+        Stop
+      </button>
+    </form>
+  );
+}
+```
+
+## Threads
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  threadId: "customer-123",
+});
+
+async function switchThread() {
+  await agent.loadMessages();
+  await agent.selectThread("customer-456");
+}
+```
+
+## Context
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  context: {
+    workspaceId: "workspace_123",
+  },
+});
+```
+
+## Client tools
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  toolHandlers: {
+    confirm_address: async (input) => {
+      const confirmed = window.confirm(input.address);
+      return { confirmed };
+    },
+  },
+});
+```
+
+## Approvals
+
+```tsx
+async function approveAll() {
+  for (const approval of agent.pendingToolApprovals) {
+    await agent.approveToolCall(approval.interruptId);
+  }
+}
+```
+
+## Events
+
+```tsx
+import { EventType } from "@better-agent/core";
+
+const agent = useAgent(client.agent("support"), {
+  onEvent(event) {
+    if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
+      console.log(event.delta);
+    }
+  },
+});
+```
+
+## Finish and errors
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  onFinish(finish) {
+    console.log(finish.runId, finish.isInterrupted);
+  },
+  onError(error) {
+    console.error(error.code, error.message);
+  },
+});
+```
+
+## Next
+
+See [Client](/docs/concepts/client), [Tools](/docs/concepts/tools),
+[Human in the Loop](/docs/concepts/hil), [Memory](/docs/concepts/memory),
+[Events](/docs/concepts/events), and [Storage](/docs/concepts/storage).

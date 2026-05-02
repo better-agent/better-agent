@@ -1,17 +1,23 @@
 # create-better-agent
 
-Create a new Better Agent app or add Better Agent to an existing app.
+Create a new Better Agent app.
 
 ## Usage
+
+Run the interactive scaffold:
 
 ```bash
 npm create better-agent
 ```
 
-Patch the current app:
+Or provide the scaffold options directly:
 
 ```bash
-npm create better-agent@latest -- --mode patch
+npm create better-agent my-agent-app -- --framework nextjs --providers openai --plugins logging --no-install
 ```
 
-Supports `generic`, `nextjs`, `remix`, `sveltekit`, `astro`, `nuxt`, `tanstack-start`, `solidstart`, and `react-router`.
+Supports `nextjs`, `sveltekit`, `remix`, `astro`, `nuxt`, `tanstack-start`, and `solid-start`.
+
+Providers: `openai`, `anthropic`, `gemini`, `xai`, `ollama`, `openrouter`, and `workers-ai`.
+
+Plugins: `ip-allowlist`, `logging`, `rate-limit`, and `sandbox`.

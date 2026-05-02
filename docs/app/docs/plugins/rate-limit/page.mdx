@@ -1,0 +1,119 @@
+---
+title: "Rate Limit"
+description: "Windowed request rate limiting plugin."
+icon: refresh
+---
+
+# Rate Limit
+
+Rate Limit blocks requests after a configured number of calls in a time window.
+
+## Basic usage
+
+```ts
+import { betterAgent } from "@better-agent/core";
+import { rateLimit } from "@better-agent/plugins";
+
+export const app = betterAgent({
+  agents: [supportAgent],
+  plugins: [
+    rateLimit({
+      windowMs: 60_000,
+      max: 100,
+    }),
+  ],
+});
+```
+
+By default, each agent gets one global bucket.
+
+## Limit by user or tenant
+
+Use `key` to decide which requests share a bucket.
+
+```ts
+const plugin = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  key: ({ agentName, auth, request }) => {
+    const tenantId = request.headers.get("x-tenant-id") ?? "public";
+    return `${agentName}:${tenantId}:${auth?.subject ?? "anonymous"}`;
+  },
+});
+```
+
+## Shared storage
+
+The default in-memory store is fine for local development or one server
+instance. Use `storage` when limits need to be shared across instances.
+
+```ts
+const rows = new Map<string, { count: number; version: number }>();
+
+const plugin = rateLimit({
+  windowMs: 60_000,
+  max: 100,
+  storage: {
+    async read({ bucket }) {
+      return rows.get(bucket.id) ?? null;
+    },
+    async write({ bucket, prevVersion, next }) {
+      const current = rows.get(bucket.id) ?? null;
+
+      if (prevVersion === null) {
+        if (current) return false;
+        rows.set(bucket.id, next);
+        return true;
+      }
+
+      if (!current || current.version !== prevVersion) return false;
+
+      rows.set(bucket.id, next);
+      return true;
+    },
+  },
+});
+```
+
+`write` uses compare-and-set semantics. Return `false` when another request
+updated the bucket first.
+
+## Store errors
+
+If storage fails, `onStoreError` decides what to do. By default, the plugin
+allows the request.
+
+```ts
+const plugin = rateLimit({
+  windowMs: 60_000,
+  max: 100,
+  onStoreError: () => "deny",
+});
+```
+
+Return `"allow"`, `"deny"`, or a custom `Response`.
+
+## Retries
+
+Use `casRetries` to control how many times the plugin retries a conflicting
+storage write. A conflict happens when `storage.write` returns `false`, usually
+because another request updated the same bucket first. The default is `8`.
+
+```ts
+const plugin = rateLimit({
+  windowMs: 60_000,
+  max: 100,
+  casRetries: 12,
+});
+```
+
+## Blocked response
+
+Blocked requests return `429 Too Many Requests` with rate-limit headers.
+
+| Header                  | Description                           |
+| ----------------------- | ------------------------------------- |
+| `retry-after`           | Seconds until the window resets       |
+| `x-ratelimit-limit`     | Max requests allowed                  |
+| `x-ratelimit-remaining` | Remaining requests                    |
+| `x-ratelimit-reset`     | Unix timestamp when the window resets |

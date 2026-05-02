@@ -1,0 +1,202 @@
+---
+title: "Sandbox"
+description: "Sandbox workspace tools for agents."
+icon: terminal
+---
+
+# Sandbox
+
+Sandbox gives agents a real workspace for commands, files, directories, and
+preview URLs.
+
+Built-in clients are available for E2B and Daytona. Install the provider SDK you
+use.
+
+```bash
+npm install e2b
+npm install @daytonaio/sdk
+```
+
+## E2B
+
+```ts
+import { betterAgent } from "@better-agent/core";
+import { createE2BSandboxClient, sandbox } from "@better-agent/plugins";
+
+export const app = betterAgent({
+  agents: [coderAgent],
+  plugins: [
+    sandbox({
+      client: createE2BSandboxClient({
+        apiKey: process.env.E2B_API_KEY,
+      }),
+    }),
+  ],
+});
+```
+
+## Daytona
+
+```ts
+import { betterAgent } from "@better-agent/core";
+import {
+  createDaytonaSandboxClient,
+  sandbox,
+} from "@better-agent/plugins";
+
+export const app = betterAgent({
+  agents: [coderAgent],
+  plugins: [
+    sandbox({
+      client: createDaytonaSandboxClient({
+        apiKey: process.env.DAYTONA_API_KEY,
+        target: process.env.DAYTONA_TARGET,
+        templateKind: "image",
+      }),
+      createConfig: {
+        template: "node:20",
+        lifecycle: {
+          idleStopMs: 60 * 60_000,
+        },
+      },
+    }),
+  ],
+});
+```
+
+## Tools
+
+By default, the plugin adds these tools:
+
+| Tool                  | Use it for                 |
+| --------------------- | -------------------------- |
+| `sandbox_create`      | Create or reuse a sandbox  |
+| `sandbox_exec`        | Run a command              |
+| `sandbox_read_file`   | Read a file                |
+| `sandbox_write_file`  | Write a file               |
+| `sandbox_list_files`  | List files                 |
+| `sandbox_make_dir`    | Create a directory         |
+| `sandbox_remove_path` | Remove a file or directory |
+| `sandbox_get_host`    | Get a public preview URL   |
+| `sandbox_kill`        | Stop the sandbox           |
+
+Use `prefix` to change tool names.
+
+```ts
+const plugin = sandbox({
+  prefix: "workspace",
+  client: createE2BSandboxClient({
+    apiKey: process.env.E2B_API_KEY,
+  }),
+});
+```
+
+This creates tools like `workspace_create`, `workspace_exec`, and
+`workspace_write_file`.
+
+## Sandbox creation
+
+Use `createConfig` for fixed creation settings that model overrides cannot
+change. Use `createDefaults` for fallback settings.
+
+```ts
+const plugin = sandbox({
+  client: createDaytonaSandboxClient({
+    apiKey: process.env.DAYTONA_API_KEY,
+  }),
+  createConfig: {
+    template: "node:20",
+    envs: {
+      NODE_ENV: "development",
+    },
+  },
+  createDefaults: {
+    startupTimeoutMs: 90_000,
+  },
+});
+```
+
+Precedence is `createConfig`, model override, then `createDefaults`.
+
+| Field                      | E2B           | Daytona       |
+| -------------------------- | ------------- | ------------- |
+| `template`                 | Supported     | Supported     |
+| `startupTimeoutMs`         | Not supported | Supported     |
+| `envs`                     | Supported     | Supported     |
+| `metadata`                 | Supported     | Supported     |
+| `lifecycle.ttlMs`          | Supported     | Not supported |
+| `lifecycle.idleStopMs`     | Not supported | Supported     |
+| `lifecycle.archiveAfterMs` | Not supported | Supported     |
+| `lifecycle.deleteAfterMs`  | Not supported | Supported     |
+
+Unsupported provider fields throw a validation error.
+
+## Reuse
+
+By default, the plugin reuses one sandbox per `threadId`. Without a `threadId`,
+the plugin does not automatically reuse a sandbox.
+
+Use `sessionKey` to control reuse.
+
+```ts
+const plugin = sandbox({
+  client: createE2BSandboxClient({
+    apiKey: process.env.E2B_API_KEY,
+  }),
+  sessionKey: ({ agentName, threadId }) => {
+    if (!threadId) return undefined;
+    return `${agentName}:${threadId}`;
+  },
+});
+```
+
+Return a non-empty string to reuse a sandbox under that key. Return `null` or
+`undefined` to disable reuse for that call.
+
+## Shared store
+
+The default session store is in-memory. Use `store` when sandbox reuse needs to
+work across workers or instances.
+
+```ts
+const plugin = sandbox({
+  client: createE2BSandboxClient({
+    apiKey: process.env.E2B_API_KEY,
+  }),
+  store: {
+    get: async (key) => redis.get(key),
+    set: async (key, sandboxId) => {
+      await redis.set(key, sandboxId);
+    },
+    delete: async (key) => {
+      await redis.del(key);
+    },
+  },
+});
+```
+
+## Approvals
+
+Sandbox tools can run commands and modify files. Use approvals for risky tools.
+
+```ts
+const plugin = sandbox({
+  client: createE2BSandboxClient({
+    apiKey: process.env.E2B_API_KEY,
+  }),
+  approvals: {
+    exec: { required: true },
+    writeFile: { required: true },
+    removePath: { required: true },
+    killSandbox: { required: true },
+  },
+});
+```
+
+See [Human in the Loop](/docs/concepts/hil) for approval handling.
+
+## Preview URLs
+
+Use `sandbox_get_host` when the agent starts a server inside the sandbox and
+needs a public preview URL. Providers may return a plain URL or a URL plus an
+access token.

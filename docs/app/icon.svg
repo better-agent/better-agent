@@ -1,6 +1,17 @@
-<svg width="236" height="236" viewBox="0 0 236 236" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="236" height="236" fill="black"/>
-<g transform="translate(118 118) scale(1.08) translate(-118 -118)">
-<path d="M83.992 83.88H120.088C138.52 83.88 147.736 91.0053 147.736 105.256C147.736 113.107 143.811 119.08 135.96 123.176C140.995 124.456 144.92 126.803 147.736 130.216C150.637 133.629 152.088 138.067 152.088 143.528C152.088 151.805 149.272 158.12 143.64 162.472C138.093 166.824 129.987 169 119.32 169H83.352V158.632L87.576 158.248C90.0507 157.992 91.288 156.797 91.288 154.664V95.144L83.992 94.76V83.88ZM106.904 130.216V156.968H118.936C130.029 156.968 135.576 152.445 135.576 143.4C135.576 139.133 134.168 135.891 131.352 133.672C128.621 131.368 124.696 130.216 119.576 130.216H106.904ZM106.904 95.656V118.824H116.376C121.667 118.824 125.549 117.757 128.024 115.624C130.584 113.405 131.864 110.333 131.864 106.408C131.864 102.483 130.584 99.7093 128.024 98.088C125.549 96.4667 121.965 95.656 117.272 95.656H106.904Z" fill="white"/>
-</g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Better Agent">
+    <rect width="512" height="512" fill="#000000" />
+    <text
+        x="74"
+        y="405"
+        fill="#ffffff"
+        font-family="Geist, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="360"
+        font-weight="900"
+        letter-spacing="-32"
+        lengthAdjust="spacingAndGlyphs"
+        textLength="198"
+    >
+        b
+    </text>
+    <rect x="344" y="338" width="92" height="92" fill="#ffffff" />
 </svg>

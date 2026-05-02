@@ -1,0 +1,126 @@
+---
+title: "Gemini"
+description: "Use Google Gemini models and hosted tools."
+icon: gemini
+---
+
+# Gemini
+
+## Install
+
+```bash
+npm install @better-agent/gemini
+```
+
+## Agent model
+
+```typescript
+import { defineAgent } from "@better-agent/core";
+import { gemini } from "@better-agent/gemini";
+
+export const supportAgent = defineAgent({
+  name: "support",
+  model: gemini("gemini-2.5-flash"),
+  instruction: "You help customers.",
+});
+```
+
+## Configure
+
+```typescript
+import { createGemini } from "@better-agent/gemini";
+
+const gemini = createGemini({
+  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+});
+```
+
+## Hosted tools
+
+Gemini hosted tools are available on `gemini.tools`.
+
+```typescript
+const agent = defineAgent({
+  name: "researcher",
+  model: gemini("gemini-2.5-flash"),
+  tools: [
+    gemini.tools.googleSearch({}),
+  ],
+});
+```
+
+See [Tools](/docs/concepts/tools) for local tools, client tools, approvals, MCP,
+and hosted provider tools.
+
+## Direct generation
+
+Use generation models when a tool needs a focused model call without running an
+agent.
+
+```typescript
+const text = gemini.text("gemini-2.5-flash");
+
+const extractActionItems = defineTool({
+  name: "extract_action_items",
+  description: "Extract action items from meeting notes.",
+  inputSchema: z.object({
+    notes: z.string(),
+  }),
+  execute: async ({ notes }) => {
+    const result = await text.generate({
+      input: `Extract action items as a short checklist:\n\n${notes}`,
+    });
+
+    return { checklist: result.text };
+  },
+});
+```
+
+Other generation helpers:
+
+```typescript
+const embedding = gemini.embedding("text-embedding-004");
+const image = gemini.image("imagen-4.0-generate-001");
+const video = gemini.video("veo-3.0-generate-preview");
+```
+
+## Model types
+
+`gemini("gemini-2.5-flash")` is an agent model for `defineAgent`. Agent models
+need text for messages, tool decisions, and streaming. They can support more
+than text depending on the model.
+
+`gemini.text(...)`, `gemini.embedding(...)`, and the other helpers are
+generation models for direct calls from app code or tools. They do not run the
+agent loop.
+
+## Provider options
+
+Pass Gemini options at run time with the `google` provider key.
+
+```typescript
+await app.agent("support").run({
+  messages,
+  providerOptions: {
+    google: {
+      thinkingConfig: { thinkingBudget: 1024 },
+    },
+  },
+});
+```
+
+## Capabilities
+
+| Feature           | Support |
+| ----------------- | ------- |
+| Agent model       | Yes     |
+| Text generation   | Yes     |
+| Streaming         | Yes     |
+| Structured output | Yes     |
+| Hosted tools      | Yes     |
+| Embeddings        | Yes     |
+| Images            | Yes     |
+| Video             | Yes     |
+| Audio             | No      |
+
+Source: built on [`@ai-sdk/google`](https://www.npmjs.com/package/@ai-sdk/google).

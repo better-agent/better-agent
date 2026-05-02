@@ -1,43 +1,27 @@
 import { describe, expect, test } from "bun:test";
-import { EventEmitter } from "node:events";
-import { createDisconnectSignal } from "../src/shared/disconnect";
+import { createDisconnectSignal, isDisconnectError } from "../src/shared/disconnect";
+import { MockRequest, MockResponse } from "./helpers";
 
-class MockRequest extends EventEmitter {
-    aborted = false;
-}
-
-class MockResponse extends EventEmitter {
-    writableEnded = false;
-}
-
-describe("createDisconnectSignal", () => {
-    test("does not abort on a normal request close lifecycle", () => {
+describe("disconnect", () => {
+    test("aborts when request is already aborted", () => {
         const request = new MockRequest();
-        const response = new MockResponse();
+        request.aborted = true;
 
-        const signal = createDisconnectSignal(request, response);
-
-        request.emit("close");
-
-        expect(signal.aborted).toBe(false);
+        expect(createDisconnectSignal(request).aborted).toBe(true);
     });
 
-    test("aborts when the request is aborted", () => {
+    test("aborts on request aborted event", () => {
         const request = new MockRequest();
-        const response = new MockResponse();
+        const signal = createDisconnectSignal(request);
 
-        const signal = createDisconnectSignal(request, response);
-
-        request.aborted = true;
         request.emit("aborted");
 
         expect(signal.aborted).toBe(true);
     });
 
-    test("aborts when the response closes before finishing", () => {
+    test("aborts when response closes before finishing", () => {
         const request = new MockRequest();
         const response = new MockResponse();
-
         const signal = createDisconnectSignal(request, response);
 
         response.emit("close");
@@ -45,15 +29,24 @@ describe("createDisconnectSignal", () => {
         expect(signal.aborted).toBe(true);
     });
 
-    test("does not abort when the response closes after finishing", () => {
+    test("does not abort when response closes after finishing", () => {
         const request = new MockRequest();
         const response = new MockResponse();
         response.writableEnded = true;
-
         const signal = createDisconnectSignal(request, response);
 
         response.emit("close");
 
         expect(signal.aborted).toBe(false);
+    });
+
+    test("detects disconnect errors", () => {
+        const abortError = new Error("The operation was aborted");
+        abortError.name = "AbortError";
+
+        expect(isDisconnectError(abortError)).toBe(true);
+        expect(isDisconnectError(new Error("socket aborted"))).toBe(true);
+        expect(isDisconnectError(new Error("boom"))).toBe(false);
+        expect(isDisconnectError("aborted")).toBe(false);
     });
 });

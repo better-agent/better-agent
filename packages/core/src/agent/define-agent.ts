@@ -1,67 +1,30 @@
-import type { Capabilities, ModalitiesParam, OutputSchemaForCaps } from "../providers";
+import type { AgentModelLike } from "../models";
 import type { ResolvableSchema } from "../schema";
-import type {
-    AgentContextFromSchema,
-    AgentModelCaps,
-    DefineAgentConfig,
-    DefinedAgent,
-} from "./types";
-import { validateAgentDefinition } from "./validation";
+import type { ToolSource } from "../tools/types";
+import type { AgentContextFromSchema, AgentDefinition } from "./types";
 
-/**
- * Defines an agent.
- *
- * @param config Agent configuration.
- * @returns The defined agent.
- *
- * @example
- * ```ts
- * const supportAgent = defineAgent({
- *   name: "support",
- *   model: openai.model("gpt-5"),
- *   instruction: "You are a helpful support agent.",
- *   tools: [getWeather],
- * });
- * ```
- */
 export function defineAgent<
     const TName extends string,
-    const TModel extends { providerId: string; modelId: string; caps: Capabilities },
+    TModel extends AgentModelLike,
     const TContextSchema extends ResolvableSchema | undefined = undefined,
-    const TContext = AgentContextFromSchema<TContextSchema>,
-    const TTools = undefined,
-    const TOutputSchema extends OutputSchemaForCaps<AgentModelCaps<TModel>> | undefined = undefined,
-    const TDefaultModalities extends
-        | ModalitiesParam<AgentModelCaps<TModel>>
-        | undefined = undefined,
+    TTools extends ToolSource<AgentContextFromSchema<TContextSchema>> | undefined = undefined,
+    const TOutputSchema extends ResolvableSchema = ResolvableSchema,
 >(
-    config: DefineAgentConfig<
+    config: AgentDefinition<
         TName,
         TModel,
         TContextSchema,
-        TContext,
+        AgentContextFromSchema<TContextSchema>,
         TTools,
-        TOutputSchema,
-        TDefaultModalities
+        TOutputSchema
     >,
-): DefinedAgent<
+): AgentDefinition<
     TName,
     TModel,
     TContextSchema,
-    TContext,
+    AgentContextFromSchema<TContextSchema>,
     TTools,
-    TOutputSchema,
-    TDefaultModalities
+    TOutputSchema
 > {
-    validateAgentDefinition(config);
-
-    return config as DefinedAgent<
-        TName,
-        TModel,
-        TContextSchema,
-        TContext,
-        TTools,
-        TOutputSchema,
-        TDefaultModalities
-    >;
+    return config;
 }

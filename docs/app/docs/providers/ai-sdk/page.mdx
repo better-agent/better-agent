@@ -1,0 +1,129 @@
+---
+title: "Vercel AI SDK"
+description: "Use AI SDK-compatible models."
+icon: vercel
+---
+
+# Vercel AI SDK
+
+Use this adapter when you already have an AI SDK model or want to use a provider
+that does not have a dedicated Better Agent package.
+
+## Install
+
+```bash
+npm install @better-agent/ai-sdk ai @ai-sdk/openai
+```
+
+Install the AI SDK provider package you use. The examples below use
+`@ai-sdk/openai`.
+
+## Agent model
+
+Wrap an AI SDK language model with `aiSdkModel`.
+
+```typescript
+import { defineAgent } from "@better-agent/core";
+import { aiSdkModel } from "@better-agent/ai-sdk";
+import { openai } from "@ai-sdk/openai";
+
+const model = aiSdkModel({
+  model: openai("gpt-5.5"),
+  providerId: "openai",
+  modelId: "gpt-5.5",
+  capabilities: {
+    identity: { provider: "openai" },
+    transport: { streaming: true },
+    output: {
+      structuredOutput: true,
+      supportedMimeTypes: ["text/plain", "application/json"],
+    },
+    tools: { supported: true },
+  },
+});
+
+export const supportAgent = defineAgent({
+  name: "support",
+  model,
+  instruction: "You help customers.",
+});
+```
+
+## Model types
+
+Use `aiSdkModel(...)` as the agent model in `defineAgent`.
+
+Use `aiSdkTextModel(...)`, `aiSdkEmbeddingModel(...)`, `aiSdkImageModel(...)`,
+and the other generation wrappers when your app or a tool needs a direct model
+call outside the agent loop.
+
+## Hosted tools
+
+AI SDK provider tools can be passed through Better Agent as provider tool
+configs.
+
+```typescript
+const agent = defineAgent({
+  name: "researcher",
+  model,
+  tools: [openai.tools.webSearch({ searchContextSize: "medium" })],
+});
+```
+
+## Generation
+
+Use the generation wrappers when you need text, embeddings, images, video,
+speech, or transcription outside the agent loop. A common pattern is calling a
+generation model from a server tool.
+
+```typescript
+import {
+  aiSdkTextModel,
+  aiSdkEmbeddingModel,
+  aiSdkImageModel,
+} from "@better-agent/ai-sdk";
+
+const text = aiSdkTextModel({
+  model: openai("gpt-5.5"),
+  providerId: "openai",
+  modelId: "gpt-5.5",
+});
+
+const summarize = defineTool({
+  name: "summarize",
+  description: "Summarize text with an AI SDK model.",
+  inputSchema: z.object({
+    content: z.string(),
+  }),
+  execute: async ({ content }) => {
+    const result = await text.generate({
+      input: `Summarize this in three bullets:\n\n${content}`,
+    });
+
+    return { summary: result.text };
+  },
+});
+```
+
+Other generation wrappers:
+
+```typescript
+const embedding = aiSdkEmbeddingModel({
+  model: openai.embedding("text-embedding-3-small"),
+  providerId: "openai",
+  modelId: "text-embedding-3-small",
+});
+```
+
+## Capabilities
+
+Capabilities are declared by the wrapper you create. Set only what the model
+actually supports. Agent models must include text output support.
+
+| Feature           | Support                 |
+| ----------------- | ----------------------- |
+| Text agents       | Depends on model        |
+| Streaming         | Depends on model        |
+| Structured output | Depends on model        |
+| Hosted tools      | Depends on provider     |
+| Generation models | Text, embeddings, media |

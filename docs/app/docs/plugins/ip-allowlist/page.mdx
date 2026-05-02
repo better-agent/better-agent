@@ -1,0 +1,84 @@
+---
+title: "IP Allowlist"
+description: "IP and CIDR allowlist plugin."
+icon: shield
+---
+
+# IP Allowlist
+
+IP Allowlist blocks requests unless they come from an allowed IP or CIDR range.
+
+## Basic usage
+
+```ts
+import { betterAgent } from "@better-agent/core";
+import { ipAllowlist } from "@better-agent/plugins";
+
+export const app = betterAgent({
+  agents: [supportAgent],
+  plugins: [
+    ipAllowlist({
+      allow: ["203.0.113.10"],
+    }),
+  ],
+});
+```
+
+By default, the plugin reads direct client IP headers like `x-real-ip` and
+`cf-connecting-ip`.
+
+## CIDR ranges
+
+Use CIDR ranges to allow a subnet.
+
+```ts
+const plugin = ipAllowlist({
+  allow: ["203.0.113.0/24", "2001:db8::/32"],
+});
+```
+
+Exact IPs and IPv4 or IPv6 CIDR ranges are supported.
+
+## Trusted proxies
+
+Use `trustProxy` only when your app is behind a proxy you trust to set
+`x-forwarded-for`.
+
+```ts
+const plugin = ipAllowlist({
+  allow: ["203.0.113.0/24"],
+  trustProxy: true,
+});
+```
+
+When enabled, the plugin uses the first valid IP from `x-forwarded-for`.
+
+## Custom IP resolution
+
+Use `getIp` when your platform exposes the client IP somewhere else.
+
+```ts
+const plugin = ipAllowlist({
+  allow: ["203.0.113.10"],
+  getIp: ({ request }) => request.headers.get("x-platform-client-ip"),
+});
+```
+
+## Denied response
+
+If the request IP is missing or not allowed, the plugin returns `403 Forbidden`.
+Use `onDenied` to return your own response.
+
+```ts
+const plugin = ipAllowlist({
+  allow: ["203.0.113.10"],
+  onDenied: ({ ip }) =>
+    Response.json(
+      {
+        error: "forbidden_ip",
+        ip,
+      },
+      { status: 403 },
+    ),
+});
+```

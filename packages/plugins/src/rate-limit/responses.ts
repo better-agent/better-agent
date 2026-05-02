@@ -49,6 +49,6 @@ export function createRateLimitStorageUnavailableResponse(): Response {
 /** Creates the CAS retries exceeded error. */
 export function createCasRetriesExceededError(): BetterAgentError {
     return BetterAgentError.fromCode("INTERNAL", "Rate limit write failed after CAS retries.", {
-        trace: [{ at: "plugins.rateLimitPlugin" }],
+        trace: [{ at: "plugins.rateLimit" }],
     });
 }

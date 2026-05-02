@@ -16,18 +16,20 @@ function parseIpv4(input: string): ParsedIp | null {
     if (parts.length !== 4) return null;
 
     let value = 0n;
+    const normalizedParts: string[] = [];
     for (const part of parts) {
         if (!/^\d+$/.test(part)) return null;
         const octet = Number(part);
         if (octet < 0 || octet > 255) return null;
         value = (value << 8n) | BigInt(octet);
+        normalizedParts.push(String(octet));
     }
 
     return {
         kind: "ipv4",
         value,
         bits: 32,
-        normalized: parts.join("."),
+        normalized: normalizedParts.join("."),
     };
 }
 

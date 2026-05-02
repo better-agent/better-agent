@@ -20,24 +20,24 @@ export function GridFeatureCard({ feature, index }: GridFeatureCardProps) {
     const Icon = feature.icon;
 
     return (
-        <div className="group relative flex flex-col gap-4 border border-[color:var(--border)] p-6 sm:p-7 transition-colors duration-200">
+        <div className="group relative flex min-h-[9.25rem] flex-col gap-3 border border-[color:var(--ba-border-subtle)] px-4 py-4 transition-colors duration-200 hover:border-[color:var(--ba-border)] sm:min-h-[10rem] sm:px-5 sm:py-5">
             <div className="flex items-center gap-2">
-                <span className="font-mono text-[11px] tracking-[0.04em] text-[color:color-mix(in_srgb,var(--foreground)_28%,transparent)]">
+                <span className="font-mono text-[10px] font-[330] tracking-[0.045em] text-[color:color-mix(in_srgb,var(--foreground)_24%,transparent)]">
                     {num}
                 </span>
-                <span className="text-[10.5px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--foreground)_36%,transparent)] uppercase">
+                <span className="text-[10px] font-[330] tracking-[0.075em] text-[color:color-mix(in_srgb,var(--foreground)_34%,transparent)] uppercase">
                     {feature.title}
                 </span>
             </div>
-            <h3 className="text-[15px] font-medium leading-snug text-[color:var(--foreground)]">
+            <h3 className="text-[13.5px] font-[330] leading-[1.45] text-[color:color-mix(in_srgb,var(--foreground)_68%,transparent)] sm:text-[14px]">
                 {feature.description.replace(/\.$/, "")}.
             </h3>
             {feature.extra && <div className="mt-auto">{feature.extra}</div>}
             {!feature.extra && (
                 <Icon
                     aria-hidden
-                    className="mt-auto size-5 text-[color:color-mix(in_srgb,var(--foreground)_32%,transparent)]"
-                    strokeWidth={1.5}
+                    className="mt-auto size-4 text-[color:color-mix(in_srgb,var(--foreground)_28%,transparent)]"
+                    strokeWidth={1.35}
                 />
             )}
         </div>

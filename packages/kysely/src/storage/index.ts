@@ -1,0 +1,1 @@
+export { kyselyStorage } from "./adapter";

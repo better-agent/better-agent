@@ -1,10 +1,7 @@
-import type { Plugin } from "@better-agent/core";
-import type { PluginOnStepContext, PluginSaveContext } from "@better-agent/core";
-import type { Event } from "@better-agent/core/events";
+import type { AgentEvent, Plugin, PluginStepContext } from "@better-agent/core";
 import { shouldLog } from "./format";
 import { redactHeaders } from "./redact";
-import type { LogEntry, LoggingPluginConfig } from "./types";
-import { validateLoggingPluginConfig } from "./validate";
+import type { LogEntry, LoggingConfig } from "./types";
 
 function safeInvoke(fn: ((...args: unknown[]) => void) | undefined, payload: unknown): void {
     if (!fn) return;
@@ -15,8 +12,21 @@ function safeInvoke(fn: ((...args: unknown[]) => void) | undefined, payload: unk
     }
 }
 
+function safeMap<TInput, TOutput>(
+    fn: ((input: TInput) => TOutput) | undefined,
+    input: TInput,
+): TInput | TOutput {
+    if (!fn) return input;
+    try {
+        return fn(input);
+    } catch {
+        // Logging customization must never affect runtime execution.
+        return input;
+    }
+}
+
 /** Resolves the logger methods for the configured sink. */
-function getLoggerMethods(config: LoggingPluginConfig) {
+function getLoggerMethods(config: LoggingConfig) {
     return {
         debug: config.logger?.debug ?? console.debug,
         info: config.logger?.info ?? console.info,
@@ -26,48 +36,53 @@ function getLoggerMethods(config: LoggingPluginConfig) {
 }
 
 /** Emits one log entry. */
-function emitLog(config: LoggingPluginConfig, entry: LogEntry): void {
+function emitLog(config: LoggingConfig, entry: LogEntry): void {
     const level = config.level ?? "info";
     if (!shouldLog(level, entry)) return;
 
-    const output = config.format ? config.format(entry) : entry;
+    const output = safeMap(config.format, entry);
     const logger = getLoggerMethods(config);
     safeInvoke(logger[entry.level], output);
 }
 
 /** Maps one runtime event to a log level. */
-function getEventLevel(event: Event): LogEntry["level"] {
+function getEventLevel(event: AgentEvent): LogEntry["level"] {
     if (event.type.endsWith("_ERROR")) return "error";
     return "info";
 }
 
-/** Creates request log data. */
-function createRequestData(ctx: Parameters<NonNullable<Plugin["guards"]>[number]>[0]) {
+function createRedactedRequestData(
+    ctx: Parameters<NonNullable<Plugin["guards"]>[number]>[0],
+    config: LoggingConfig,
+) {
     return {
-        mode: ctx.mode,
         url: ctx.request.url,
         method: ctx.request.method,
-        headers: redactHeaders(ctx.request.headers),
+        headers: redactHeaders(ctx.request.headers, config.redactHeaders),
         input: ctx.input,
     };
 }
 
+function redactBody(
+    config: LoggingConfig,
+    phase: Parameters<NonNullable<LoggingConfig["redactBody"]>>[0]["phase"],
+    body: unknown,
+): unknown {
+    if (!config.redactBody) return body;
+    try {
+        return config.redactBody({ body, phase });
+    } catch {
+        // Logging customization must never affect runtime execution.
+        return body;
+    }
+}
+
 /** Creates step log data. */
-function createStepData(ctx: PluginOnStepContext) {
+function createStepData(ctx: PluginStepContext) {
     return {
         stepIndex: ctx.stepIndex,
         maxSteps: ctx.maxSteps,
         messageCount: ctx.messages.length,
-    };
-}
-
-/** Creates save log data. */
-function createSaveData(ctx: PluginSaveContext) {
-    const messageCount = ctx.items.filter((item) => item.type === "message").length;
-
-    return {
-        itemCount: ctx.items.length,
-        messageCount,
     };
 }
 
@@ -76,22 +91,19 @@ function createSaveData(ctx: PluginSaveContext) {
  *
  * @example
  * ```ts
- * const plugin = loggingPlugin({
+ * const plugin = logging({
  *   level: "info",
  *   include: { requests: true, toolCalls: true },
  * });
  * ```
  */
-export const loggingPlugin = (config: LoggingPluginConfig = {}): Plugin => {
-    validateLoggingPluginConfig(config);
-
+export const logging = (config: LoggingConfig = {}): Plugin => {
     const include = {
         requests: config.include?.requests ?? true,
         events: config.include?.events ?? true,
         steps: config.include?.steps ?? true,
         modelCalls: config.include?.modelCalls ?? true,
         toolCalls: config.include?.toolCalls ?? true,
-        saves: config.include?.saves ?? false,
         errors: config.include?.errors ?? true,
     };
 
@@ -103,7 +115,7 @@ export const loggingPlugin = (config: LoggingPluginConfig = {}): Plugin => {
         plugin.guards = [
             async (ctx) => {
                 const body = config.redactBody
-                    ? config.redactBody({ body: ctx.input, phase: "request" })
+                    ? redactBody(config, "request", ctx.input)
                     : ctx.input;
 
                 emitLog(config, {
@@ -112,7 +124,7 @@ export const loggingPlugin = (config: LoggingPluginConfig = {}): Plugin => {
                     timestamp: new Date().toISOString(),
                     agentName: ctx.agentName,
                     data: {
-                        ...createRequestData(ctx),
+                        ...createRedactedRequestData(ctx, config),
                         input: body,
                     },
                 });
@@ -130,10 +142,10 @@ export const loggingPlugin = (config: LoggingPluginConfig = {}): Plugin => {
             emitLog(config, {
                 level,
                 event: "run.event",
-                timestamp: new Date(event.timestamp).toISOString(),
+                timestamp: new Date(event.timestamp ?? Date.now()).toISOString(),
                 agentName: ctx.agentName,
                 runId: ctx.runId,
-                conversationId: ctx.conversationId,
+                conversationId: ctx.threadId,
                 data: {
                     type: event.type,
                 },
@@ -149,7 +161,7 @@ export const loggingPlugin = (config: LoggingPluginConfig = {}): Plugin => {
                 timestamp: new Date().toISOString(),
                 agentName: ctx.agentName,
                 runId: ctx.runId,
-                conversationId: ctx.conversationId,
+                conversationId: ctx.threadId,
                 data: createStepData(ctx),
             });
         };
@@ -163,10 +175,10 @@ export const loggingPlugin = (config: LoggingPluginConfig = {}): Plugin => {
                 timestamp: new Date().toISOString(),
                 agentName: ctx.agentName,
                 runId: ctx.runId,
-                conversationId: ctx.conversationId,
+                conversationId: ctx.threadId,
                 data: {
                     stepIndex: ctx.stepIndex,
-                    inputCount: ctx.input.length,
+                    inputCount: ctx.messages.length,
                     toolCount: ctx.tools.length,
                     toolChoice: ctx.toolChoice,
                 },
@@ -180,11 +192,11 @@ export const loggingPlugin = (config: LoggingPluginConfig = {}): Plugin => {
                 timestamp: new Date().toISOString(),
                 agentName: ctx.agentName,
                 runId: ctx.runId,
-                conversationId: ctx.conversationId,
+                conversationId: ctx.threadId,
                 data: {
                     stepIndex: ctx.stepIndex,
                     response: config.redactBody
-                        ? config.redactBody({ body: ctx.response, phase: "response" })
+                        ? redactBody(config, "response", ctx.response)
                         : ctx.response,
                 },
             });
@@ -199,13 +211,13 @@ export const loggingPlugin = (config: LoggingPluginConfig = {}): Plugin => {
                 timestamp: new Date().toISOString(),
                 agentName: ctx.agentName,
                 runId: ctx.runId,
-                conversationId: ctx.conversationId,
+                conversationId: ctx.threadId,
                 data: {
                     toolName: ctx.toolName,
                     toolCallId: ctx.toolCallId,
                     args: config.redactBody
-                        ? config.redactBody({ body: ctx.args, phase: "tool_args" })
-                        : ctx.args,
+                        ? redactBody(config, "tool_args", ctx.input)
+                        : ctx.input,
                 },
             });
             return undefined;
@@ -218,33 +230,14 @@ export const loggingPlugin = (config: LoggingPluginConfig = {}): Plugin => {
                 timestamp: new Date().toISOString(),
                 agentName: ctx.agentName,
                 runId: ctx.runId,
-                conversationId: ctx.conversationId,
+                conversationId: ctx.threadId,
                 data: {
                     toolName: ctx.toolName,
                     toolCallId: ctx.toolCallId,
                     error: ctx.error,
                     result: config.redactBody
-                        ? config.redactBody({ body: ctx.result, phase: "tool_result" })
+                        ? redactBody(config, "tool_result", ctx.result)
                         : ctx.result,
-                },
-            });
-        };
-    }
-
-    if (include.saves) {
-        plugin.onBeforeSave = async (ctx) => {
-            emitLog(config, {
-                level: "debug",
-                event: "save.before",
-                timestamp: new Date().toISOString(),
-                agentName: ctx.agentName,
-                runId: ctx.runId,
-                conversationId: ctx.conversationId,
-                data: {
-                    ...createSaveData(ctx),
-                    items: config.redactBody
-                        ? config.redactBody({ body: ctx.items, phase: "save" })
-                        : ctx.items,
                 },
             });
         };

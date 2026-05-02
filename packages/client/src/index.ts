@@ -1,71 +1,48 @@
-/**
- * Framework-agnostic Better Agent client entrypoint.
- *
- * Framework wrappers live under the `react`, `preact`, `vue`, `solid`, and
- * `svelte` subpaths.
- */
-export { createClient } from "./core/client";
-export { createAgentChatController } from "./core/controller";
-export type { AgentChatController } from "./core/controller";
-export { getEventErrorMessage, toAgentClientError } from "./core/error";
-export type { AgentClientError } from "./core/error";
-export { pruneInputByCapabilities } from "@better-agent/core";
-export { fromConversationItems, fromModelMessages, toModelMessages } from "./core/utils";
-
+export { createClient } from "./create-client";
+export { AgentController, createAgentController } from "./core/controller";
+export { BetterAgentClientError, toBetterAgentClientError } from "./core/errors";
 export type {
-    InferClient,
+    AgentContextFor,
+    AgentNameOf,
+    AgentControllerFinish,
+    AgentControllerLifecycleHooks,
+    AgentControllerOptions,
+    AgentControllerSnapshot,
+    AgentControllerStatus,
+    AgentInterruptState,
+    AgentMessageInput,
+    AgentStreamResume,
     BetterAgentClient,
-    ClientConfig,
-    ClientEvent,
-    ToolHandlers,
-    OnToolCall,
-    ReplayInput,
+    BetterAgentClientAgentHandle,
+    BetterAgentClientAgentMemoryHandle,
+    BetterAgentClientConfig,
+    BetterAgentClientMemory,
+    BetterAgentClientRuns,
+    ClientMemoryThread,
+    ClientMemoryThreadCreateInput,
+    ClientMemoryThreadUpdateInput,
+    ClientRunInput,
+    PendingClientTool,
+    PendingToolApproval,
+    PreparedRequest,
     RequestOptions,
-    StreamRequestOptions,
-    SubmitToolResultRequest,
-    SubmitToolApprovalRequest,
-    ToolCallContext,
-    ToolCallRequest,
-} from "./types/client";
+    SendOptions,
+    ToolHandlersFor,
+} from "./types";
 export type {
-    AgentContext,
-    AgentRunInput,
-    AgentNameFromApp,
-    AgentsFromApp,
-    ModalitiesForAgent,
-    NormalizeClientApp,
-    RunInputForAgent,
-    TextInputShorthandForAgent,
-} from "./types/client-type-helpers";
-
-export type {
-    AgentChatSnapshot,
-    AgentChatControllerOptions,
-    AgentStatus,
-    PrepareMessages,
-    SendResult,
-    RetryResult,
-    ApproveToolCallParams,
-    OnFinishParams,
-    ResumeOption,
-    SendMessageOptions,
-    SetMessagesInput,
-    SubmitInput,
-    UIMessageInput,
-} from "./types/controller";
-
-export type {
+    AudioUIPart,
+    FileUIPart,
+    ImageUIPart,
+    ReasoningUIPart,
+    SourceUIPart,
+    TextUIPart,
+    ToolCallState,
+    ToolCallUIPart,
+    ToolResultState,
+    ToolResultUIPart,
     UIMessage,
     UIMessagePart,
-    PendingToolApproval,
-    TextPart,
-    AudioPart,
-    ImagePart,
-    FilePart,
-    VideoPart,
-    EmbeddingPart,
-    TranscriptPart,
-    ReasoningPart,
-    ToolCallPart,
-    ToolResultPart,
-} from "./types/ui";
+    UIMessageRole,
+    VideoUIPart,
+} from "./types";
+export { fromAgentMessages, toAgentMessages } from "./ui";

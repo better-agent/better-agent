@@ -1,39 +1,23 @@
-import { source } from "@/lib/source";
+import { RootProvider } from "@farming-labs/theme";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { GeistMono } from "geist/font/mono";
+import { GeistSans } from "geist/font/sans";
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import { AskAILauncher } from "./_components/ask-ai-launcher";
-import Providers from "./_components/providers";
-import SiteHeader from "./_components/site-header";
+import SiteHeader from "./site-header";
 import "./globals.css";
 
-const geistSans = Geist({
-    variable: "--font-geist-sans",
-    subsets: ["latin"],
-    weight: ["400", "500", "600", "700"],
-});
-
-const geistMono = Geist_Mono({
-    variable: "--font-geist-mono",
-    subsets: ["latin"],
-    weight: ["400", "500", "600", "700"],
-});
-
 const BASE_URL = "https://better-agent.com";
+const HOME_OG_IMAGE = "/api/og?variant=home";
 
 export const metadata: Metadata = {
     metadataBase: new URL(BASE_URL),
-    icons: {
-        icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-        shortcut: [{ url: "/icon.svg", type: "image/svg+xml" }],
-        apple: [{ url: "/apple-icon.svg", type: "image/svg+xml" }],
-    },
     title: {
         default: "Better Agent",
-        template: "%s | Better Agent",
+        template: "%s - Better Agent",
     },
-    description: "The better way to build AI agents in TypeScript.",
+    description:
+        "A TypeScript framework for building typed, event-driven, framework-agnostic agent apps.",
     keywords: [
         "AI agents",
         "TypeScript",
@@ -41,24 +25,19 @@ export const metadata: Metadata = {
         "typed agents",
         "durable agents",
         "composable agents",
-        "agent tools",
         "structured output",
         "human in the loop",
-        "agent framework typescript",
     ],
-    authors: [{ name: "Better Agent" }],
-    creator: "Better Agent",
-    publisher: "Better Agent",
-    robots: {
-        index: true,
-        follow: true,
-        googleBot: {
-            index: true,
-            follow: true,
-            "max-video-preview": -1,
-            "max-image-preview": "large",
-            "max-snippet": -1,
-        },
+    applicationName: "Better Agent",
+    alternates: {
+        canonical: "/",
+    },
+    icons: {
+        icon: [
+            { url: "/favicon.ico", sizes: "any" },
+            { url: "/icon.svg", type: "image/svg+xml" },
+        ],
+        apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
     },
     openGraph: {
         type: "website",
@@ -66,10 +45,11 @@ export const metadata: Metadata = {
         url: BASE_URL,
         siteName: "Better Agent",
         title: "Better Agent",
-        description: "The better way to build AI agents in TypeScript.",
+        description:
+            "A TypeScript framework for building typed, event-driven, framework-agnostic agent apps.",
         images: [
             {
-                url: `${BASE_URL}/og.png`,
+                url: HOME_OG_IMAGE,
                 width: 1200,
                 height: 630,
                 alt: "Better Agent",
@@ -79,12 +59,9 @@ export const metadata: Metadata = {
     twitter: {
         card: "summary_large_image",
         title: "Better Agent",
-        description: "The better way to build AI agents in TypeScript.",
-        creator: "@probiruk",
-        images: [`${BASE_URL}/og.png`],
-    },
-    alternates: {
-        canonical: BASE_URL,
+        description:
+            "A TypeScript framework for building typed, event-driven, framework-agnostic agent apps.",
+        images: [HOME_OG_IMAGE],
     },
 };
 
@@ -94,21 +71,17 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="en" suppressHydrationWarning>
-            <body
-                suppressHydrationWarning
-                className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-            >
-                <Providers>
-                    <div
-                        suppressHydrationWarning
-                        className="relative isolate flex min-h-svh flex-col overflow-x-clip [--header-height:2.9rem]"
-                    >
-                        <SiteHeader pageTree={source.pageTree} />
-                        {children}
-                        <AskAILauncher />
-                    </div>
-                </Providers>
+        <html
+            lang="en"
+            data-scroll-behavior="smooth"
+            suppressHydrationWarning
+            className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}
+        >
+            <body className="min-h-full flex flex-col pt-[var(--header-height)] [--header-height:3rem]">
+                <RootProvider theme={{ defaultTheme: "dark" }}>
+                    <SiteHeader />
+                    {children}
+                </RootProvider>
                 <Analytics />
                 <SpeedInsights />
             </body>

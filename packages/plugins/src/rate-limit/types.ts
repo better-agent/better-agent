@@ -1,4 +1,4 @@
-import type { PluginGuardMode } from "@better-agent/core";
+import type { AuthContext } from "@better-agent/core";
 
 /** One rate-limit window bucket. */
 export type RateLimitBucket = {
@@ -16,19 +16,19 @@ export type RateLimitBucket = {
 
 /** Request data passed to rate-limit callbacks. */
 export type RateLimitRequestContext = {
-    /** Guard mode. */
-    mode: PluginGuardMode;
     /** Agent name. */
     agentName: string;
     /** Incoming request. */
     request: Request;
+    /** Resolved auth context, when app auth is configured. */
+    auth: AuthContext | null;
 };
 
 /** Stored rate-limit row. */
 export type RateLimitStorageState = { count: number; version: number };
 
-/** Configuration for `rateLimitPlugin`. */
-export type RateLimitPluginConfig = {
+/** Configuration for `rateLimit`. */
+export type RateLimitConfig = {
     /** Plugin id. */
     id?: string;
     /** Rate-limit window in milliseconds. */

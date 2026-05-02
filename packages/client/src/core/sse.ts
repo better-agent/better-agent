@@ -1,87 +1,116 @@
-import { Events } from "@better-agent/core/events";
-import type { ClientEvent } from "../types/client";
+import type { AgentEvent } from "@better-agent/core";
+import { BetterAgentClientError } from "./errors";
 
-const isEventType = (value: string): value is ClientEvent["type"] =>
-    Object.values(Events).includes(value as ClientEvent["type"]);
-
-type PendingSseFrame = {
+interface SseFrame {
     data: string;
-    eventName?: string;
+    event?: string;
     id?: number;
-};
+}
 
-const resetFrame = (): PendingSseFrame => ({ data: "" });
+const createFrame = (): SseFrame => ({ data: "" });
 
-// Throw SSE `event: error` frames instead of yielding them.
-const getSseErrorMessage = (data: string): string => {
+const getErrorPayload = (
+    data: string,
+): {
+    message: string;
+    code?: string;
+    status?: number;
+    details?: unknown;
+} => {
+    const fallbackMessage = data.trim().length > 0 ? data.trim() : "Stream failed.";
+
     try {
-        const parsed = JSON.parse(data) as { message?: unknown };
-        if (typeof parsed.message === "string" && parsed.message.trim().length > 0) {
-            return parsed.message;
+        const parsed = JSON.parse(data) as unknown;
+        if (!parsed || typeof parsed !== "object") {
+            return { message: fallbackMessage, details: parsed };
         }
-    } catch {}
 
-    return data.trim().length > 0 ? data.trim() : "Stream failed";
+        const messageField =
+            "message" in parsed &&
+            typeof parsed.message === "string" &&
+            parsed.message.trim().length > 0
+                ? parsed.message
+                : undefined;
+        const detailField =
+            "detail" in parsed &&
+            typeof parsed.detail === "string" &&
+            parsed.detail.trim().length > 0
+                ? parsed.detail
+                : undefined;
+        const codeField =
+            "code" in parsed && typeof parsed.code === "string" ? parsed.code : undefined;
+        const statusField =
+            "status" in parsed &&
+            typeof parsed.status === "number" &&
+            Number.isFinite(parsed.status)
+                ? parsed.status
+                : undefined;
+
+        return {
+            message: messageField ?? detailField ?? fallbackMessage,
+            code: codeField,
+            status: statusField,
+            details: parsed,
+        };
+    } catch {
+        return { message: fallbackMessage };
+    }
 };
 
-const parseFrame = (
-    frame: PendingSseFrame,
-    options: { onId?: (id: number) => void },
-): ClientEvent | null => {
-    if (!frame.data) {
+const toSseError = (data: string): BetterAgentClientError => {
+    const payload = getErrorPayload(data);
+
+    return new BetterAgentClientError(payload.message, {
+        code: payload.code,
+        status: payload.status,
+        details: payload.details,
+    });
+};
+
+const parseFrame = (frame: SseFrame): AgentEvent | null => {
+    if (frame.data.length === 0) {
         return null;
     }
 
     const data = frame.data.replace(/\n$/, "");
-    if (frame.eventName === "error") {
-        throw new Error(getSseErrorMessage(data));
+    if (frame.event === "error") {
+        throw toSseError(data);
     }
 
-    try {
-        const parsed = JSON.parse(data) as ClientEvent;
-        if (!(parsed && typeof parsed === "object" && typeof parsed.type === "string")) {
-            return null;
-        }
-        if (!isEventType(parsed.type)) {
-            return null;
-        }
-        if (typeof frame.id === "number") {
-            parsed.seq = frame.id;
-            options.onId?.(frame.id);
-        }
-        return parsed;
-    } catch {
-        return null;
+    const parsed = JSON.parse(data) as AgentEvent;
+    if (frame.id !== undefined && parsed && typeof parsed === "object") {
+        return { ...parsed, seq: frame.id } as AgentEvent;
     }
+
+    return parsed;
 };
 
-export async function* parseSse(
-    body: ReadableStream<Uint8Array>,
-    options: { onId?: (id: number) => void } = {},
-): AsyncIterable<ClientEvent> {
+export async function* parseSse(body: ReadableStream<Uint8Array>): AsyncIterable<AgentEvent> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let frame = resetFrame();
+    let frame = createFrame();
 
-    while (true) {
-        const chunk = await reader.read();
-        const { done, value } = chunk;
-        if (done) break;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+            break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
 
         for (;;) {
-            const nl = buffer.indexOf("\n");
-            if (nl < 0) break;
+            const newlineIndex = buffer.indexOf("\n");
+            if (newlineIndex < 0) {
+                break;
+            }
 
-            const line = buffer.slice(0, nl).replace(/\r$/, "");
-            buffer = buffer.slice(nl + 1);
+            const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
+            buffer = buffer.slice(newlineIndex + 1);
 
-            // Blank line ends the frame.
             if (line === "") {
-                const event = parseFrame(frame, options);
-                frame = resetFrame();
+                const event = parseFrame(frame);
+                frame = createFrame();
                 if (event) {
                     yield event;
                 }
@@ -89,22 +118,24 @@ export async function* parseSse(
             }
 
             if (line.startsWith("event:")) {
-                frame.eventName = line.slice(6).trim();
+                frame.event = line.slice("event:".length).trim();
                 continue;
             }
+
             if (line.startsWith("id:")) {
-                const idValue = Number(line.slice(3).trim());
-                frame.id = Number.isFinite(idValue) ? idValue : undefined;
+                const id = Number(line.slice("id:".length).trim());
+                frame.id = Number.isFinite(id) ? id : undefined;
                 continue;
             }
+
             if (line.startsWith("data:")) {
-                frame.data += `${line.slice(5).trim()}\n`;
+                frame.data += `${line.slice("data:".length).trim()}\n`;
             }
         }
     }
 
-    const finalEvent = parseFrame(frame, options);
-    if (finalEvent) {
-        yield finalEvent;
+    const event = parseFrame(frame);
+    if (event) {
+        yield event;
     }
 }

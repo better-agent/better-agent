@@ -1,0 +1,250 @@
+---
+title: "Plugins"
+description: "Add app-wide behavior to every agent."
+icon: puzzle
+---
+
+# Plugins
+
+Plugins add behavior at the app level. Register them once and they apply to every
+agent in the app.
+
+```ts
+import { betterAgent, definePlugin } from "@better-agent/core";
+
+const analytics = definePlugin({
+  id: "analytics",
+  onEvent: async (event, ctx) => {
+    await trackEvent({
+      type: event.type,
+      runId: ctx.runId,
+      agent: ctx.agentName,
+    });
+  },
+});
+
+export const app = betterAgent({
+  agents: [supportAgent],
+  plugins: [analytics],
+});
+```
+
+Use plugins for cross-agent concerns: request guards, logging, analytics, shared
+tools, custom endpoints, and model/tool/event hooks.
+
+## Create a plugin
+
+Use `definePlugin` when behavior should apply across agents.
+
+```ts
+import { definePlugin } from "@better-agent/core";
+
+export const analytics = definePlugin({
+  id: "analytics",
+  onEvent: async (event, ctx) => {
+    await trackEvent({
+      type: event.type,
+      runId: ctx.runId,
+      agent: ctx.agentName,
+    });
+  },
+});
+```
+
+Each plugin needs a unique `id`.
+
+## Guards
+
+Guards run before app requests. Return `null` to allow the request, or return a
+`Response` to stop it.
+
+```ts
+const workspaceGuard = definePlugin({
+  id: "workspace-guard",
+  guards: [
+    async ({ request, auth }) => {
+      const workspaceId = request.headers.get("x-workspace-id");
+
+      if (!auth || !workspaceId) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const allowed = await canAccessWorkspace(auth, workspaceId);
+      return allowed ? null : new Response("Forbidden", { status: 403 });
+    },
+  ],
+});
+```
+
+The guard context includes `agentName`, parsed `input`, the raw `request`, and
+resolved `auth`. See [Auth](/docs/concepts/auth) for request identity.
+
+## Lifecycle hooks
+
+Plugins can observe or adjust the agent loop.
+
+```ts
+const tenantContext = definePlugin({
+  id: "tenant-context",
+  onStep: async (ctx) => {
+    ctx.updateMessages((messages) => [
+      {
+        role: "system",
+        content: `Run id: ${ctx.runId}`,
+      },
+      ...messages,
+    ]);
+  },
+});
+```
+
+Use `onStep` to adjust messages or active tools before a step. Use
+`onStepFinish` to observe the step result after it finishes.
+
+## Model hooks
+
+Model hooks run around provider calls.
+
+```ts
+const modelAudit = definePlugin({
+  id: "model-audit",
+  onBeforeModelCall: async (ctx) => {
+    await auditModelInput({
+      runId: ctx.runId,
+      agent: ctx.agentName,
+      messageCount: ctx.messages.length,
+    });
+  },
+  onAfterModelCall: async (ctx) => {
+    await auditModelOutput({
+      runId: ctx.runId,
+      usage: ctx.response.usage,
+    });
+  },
+});
+```
+
+`onBeforeModelCall` can update messages, tools, tool choice, provider tools, and
+provider options. `onAfterModelCall` observes the provider response.
+
+## Tool hooks
+
+Tool hooks run around tool calls.
+
+```ts
+const blockDangerousTools = definePlugin({
+  id: "block-dangerous-tools",
+  onBeforeToolCall: async (ctx) => {
+    if (ctx.toolName === "delete_user") {
+      return {
+        skip: true,
+        status: "error",
+        error: "This tool is disabled.",
+      };
+    }
+  },
+});
+```
+
+`onBeforeToolCall` can update tool input or skip execution. `onAfterToolCall`
+can update the tool result, status, or error.
+
+## Event middleware
+
+Event middleware can transform or drop streamed events before they reach the
+client.
+
+```ts
+import { EventType } from "@better-agent/core";
+
+const redactToolResults = definePlugin({
+  id: "redact-tool-results",
+  events: {
+    subscribe: [EventType.TOOL_CALL_RESULT],
+    middleware: [
+      async (event, _ctx, next) => {
+        if (event.type !== EventType.TOOL_CALL_RESULT) {
+          return next(event);
+        }
+
+        return next({
+          ...event,
+          result: "[redacted]",
+        });
+      },
+    ],
+  },
+});
+```
+
+Use `subscribe` to limit which event types middleware receives. Return
+`next(event)` to continue, or return `null` to drop the event.
+
+## Event observation
+
+Use `onEvent` when you only need to observe events.
+
+```ts
+const analytics = definePlugin({
+  id: "analytics",
+  onEvent: async (event, ctx) => {
+    await trackEvent({
+      type: event.type,
+      runId: ctx.runId,
+      agent: ctx.agentName,
+    });
+  },
+});
+```
+
+See [Events](/docs/concepts/events) for the app-level event stream.
+
+## Plugin tools
+
+Plugins can add tools that are available to agents.
+
+```ts
+import { definePlugin, defineTool } from "@better-agent/core";
+import { z } from "zod";
+
+const currentTime = defineTool({
+  name: "current_time",
+  target: "server",
+  description: "Return the current UTC time.",
+  inputSchema: z.object({}),
+  execute: async () => ({ time: new Date().toISOString() }),
+});
+
+export const time = definePlugin({
+  id: "time",
+  tools: [currentTime],
+});
+```
+
+See [Tools](/docs/concepts/tools) for tool targets, approvals, MCP tools, and
+provider tools.
+
+## Endpoints
+
+Plugins can add HTTP routes to the Better Agent handler.
+
+```ts
+const health = definePlugin({
+  id: "health",
+  endpoints: [
+    {
+      method: "GET",
+      path: "/health",
+      handler: async () => Response.json({ ok: true }),
+    },
+  ],
+});
+```
+
+Endpoint paths must start with `/`. Methods can be `GET`, `POST`, `PUT`,
+`PATCH`, `DELETE`, `OPTIONS`, or an array of those methods.
+
+## Error behavior
+
+Guards can stop a request by returning a `Response`. If a guard throws, the
+request fails. Other plugin hooks are logged on failure and the run continues.

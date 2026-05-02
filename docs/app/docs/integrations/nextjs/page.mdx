@@ -1,0 +1,266 @@
+---
+title: "Next.js"
+description: "Use Better Agent with Next.js App Router."
+icon: nextjs
+---
+
+# Next.js
+
+Use Better Agent in a Next.js App Router app with the React `useAgent` hook.
+
+## Server
+
+```typescript
+// lib/better-agent/server.ts
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { openai } from "@better-agent/openai";
+
+const supportAgent = defineAgent({
+  name: "support",
+  model: openai("gpt-5.5"),
+  instruction: "You help customers.",
+});
+
+const app = betterAgent({
+  agents: [supportAgent],
+  basePath: "/api/agents",
+});
+
+export default app;
+```
+
+## Route
+
+Create a catch-all route and forward every method to `app.handler`.
+
+```typescript
+// app/api/agents/[...path]/route.ts
+import app from "@/lib/better-agent/server";
+
+export const dynamic = "force-dynamic";
+
+const handle = (request: Request) => app.handler(request);
+
+export const GET = handle;
+export const POST = handle;
+export const PUT = handle;
+export const PATCH = handle;
+export const DELETE = handle;
+export const OPTIONS = handle;
+export const HEAD = handle;
+```
+
+## Client
+
+```typescript
+// lib/better-agent/client.ts
+import { createClient } from "@better-agent/client";
+import type app from "@/lib/better-agent/server";
+
+export const client = createClient<typeof app>({
+  baseURL: "/api/agents",
+});
+```
+
+Keep `basePath`, the route path, and `baseURL` aligned.
+
+## Basic chat
+
+`useAgent` gives you messages, status, errors, send, stop, and resume helpers.
+
+```tsx
+"use client";
+
+import { useAgent } from "@better-agent/client/react";
+import { useState } from "react";
+import { client } from "@/lib/better-agent/client";
+
+export function SupportChat() {
+  const [input, setInput] = useState("");
+  const agent = useAgent(client.agent("support"), {
+    threadId: "main",
+  });
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const message = input.trim();
+        if (!message) return;
+        setInput("");
+        agent.sendMessage(message);
+      }}
+    >
+      {agent.messages.map((message) => (
+        <p key={message.id}>{message.role}</p>
+      ))}
+
+      {agent.error ? <p>{agent.error.message}</p> : null}
+
+      <input value={input} onChange={(event) => setInput(event.target.value)} />
+      <button disabled={agent.isRunning}>Send</button>
+      <button type="button" onClick={() => agent.stop()} disabled={!agent.isRunning}>
+        Stop
+      </button>
+    </form>
+  );
+}
+```
+
+## Threads
+
+Pass `threadId` to continue a saved conversation. Memory needs storage to
+survive reloads and deploys.
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  threadId: "customer-123",
+});
+```
+
+## Load messages
+
+Memory-enabled agents expose helpers for loading and switching threads.
+
+```tsx
+function ThreadSwitcher() {
+  const agent = useAgent(client.agent("support"), {
+    threadId: "customer-123",
+  });
+
+  return (
+    <>
+      <button onClick={() => agent.loadMessages()}>Reload</button>
+      <button onClick={() => agent.selectThread("customer-456")}>
+        Switch thread
+      </button>
+      <button onClick={() => agent.clearThread()}>New thread</button>
+    </>
+  );
+}
+```
+
+## Context
+
+Use `context` for stable per-chat values. You can also pass context per
+message.
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  context: {
+    userId: "user_123",
+    plan: "pro",
+  },
+});
+
+async function reviewPlan() {
+  await agent.sendMessage("Review my plan.", {
+    context: {
+      userId: "user_123",
+      plan: "enterprise",
+    },
+  });
+}
+```
+
+## Client tools
+
+Register handlers for tools that run in the browser. Matching client tools
+resolve and resume automatically.
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  toolHandlers: {
+    confirm_address: async (input) => {
+      const confirmed = window.confirm(input.address);
+      return { confirmed };
+    },
+  },
+});
+```
+
+When no handler exists, use `pendingClientTools` to render your own UI.
+
+```tsx
+for (const tool of agent.pendingClientTools) {
+  console.log(tool.toolName, tool.input);
+}
+```
+
+## Approvals
+
+When a server tool waits for approval, render `pendingToolApprovals`.
+
+```tsx
+function Approvals({ agent }: { agent: ReturnType<typeof useAgent> }) {
+  return (
+    <>
+      {agent.pendingToolApprovals.map((approval) => (
+        <div key={approval.interruptId}>
+          <p>{approval.toolName}</p>
+          <button onClick={() => agent.approveToolCall(approval.interruptId)}>
+            Approve
+          </button>
+          <button onClick={() => agent.rejectToolCall(approval.interruptId)}>
+            Reject
+          </button>
+        </div>
+      ))}
+    </>
+  );
+}
+```
+
+## Events
+
+Use `onEvent` for progress UI, logging, analytics, or custom event handling.
+
+```tsx
+import { EventType } from "@better-agent/core";
+
+const agent = useAgent(client.agent("support"), {
+  onEvent(event) {
+    if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
+      console.log(event.delta);
+    }
+  },
+});
+```
+
+## Finish and errors
+
+Use lifecycle callbacks for final messages, interrupts, aborts, and errors.
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  onFinish(finish) {
+    console.log(finish.runId, finish.generatedMessages);
+  },
+  onError(error) {
+    console.error(error.code, error.message);
+  },
+});
+```
+
+## Resume
+
+Use `resume` when you have a saved run cursor.
+
+```tsx
+const agent = useAgent(client.agent("support"), {
+  resume: {
+    runId: "run_123",
+    afterSequence: 42,
+  },
+});
+
+async function reconnect() {
+  await agent.resume();
+}
+```
+
+## Next
+
+See [Client](/docs/concepts/client), [Tools](/docs/concepts/tools),
+[Human in the Loop](/docs/concepts/hil), [Memory](/docs/concepts/memory),
+[Events](/docs/concepts/events), and [Storage](/docs/concepts/storage).

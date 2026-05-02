@@ -1,41 +1,37 @@
 {
-  "name": "example-tanstack",
-  "version": "0.1.0",
+  "name": "tanstack",
   "private": true,
   "type": "module",
-  "imports": {
-    "#/*": "./src/*"
-  },
   "scripts": {
     "dev": "vite dev --port 3000",
     "build": "vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@better-agent/client": "workspace:*",
-    "@better-agent/core": "workspace:*",
-    "@better-agent/plugins": "workspace:*",
-    "@better-agent/providers": "workspace:*",
+    "@better-agent/client": "0.1.0-beta.4",
+    "@better-agent/core": "0.1.0-beta.4",
+    "@better-agent/openai": "0.1.0-beta.4",
     "@tailwindcss/vite": "^4.1.18",
-    "@tanstack/react-devtools": "^0.7.0",
-    "@tanstack/react-router": "1.168.10",
-    "@tanstack/react-router-devtools": "1.166.11",
-    "@tanstack/react-router-ssr-query": "1.166.10",
-    "@tanstack/react-start": "1.167.16",
-    "@tanstack/router-plugin": "1.167.12",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
+    "@tanstack/react-router": "latest",
+    "@tanstack/react-start": "latest",
+    "@tanstack/router-plugin": "^1.132.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
-    "@tanstack/devtools-vite": "0.3.12",
+    "@tanstack/devtools-vite": "latest",
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^5.0.4",
+    "@vitejs/plugin-react": "^6.0.1",
     "typescript": "^5.7.2",
-    "vite": "^7.1.7",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite": "^8.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "lightningcss"
+    ]
   }
 }

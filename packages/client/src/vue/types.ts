@@ -1,73 +1,52 @@
 import type { ComputedRef } from "vue";
-import type { AgentClientError } from "../core/error";
-import type { AgentNameFromApp, ModalitiesForAgent } from "../types/client-type-helpers";
+import type { AgentController } from "../core/controller";
+import type { BetterAgentClientError } from "../core/errors";
+import type { AgentHasMemory, AgentNameOf } from "../core/inference";
 import type {
-    AgentChatControllerOptions,
-    AgentStatus,
-    ApproveToolCallParams,
-    RetryResult,
-    SendMessageInputForAgent,
-    SendResult,
-    SetMessagesInput,
-} from "../types/controller";
-import type { PendingToolApproval, UIMessage } from "../types/ui";
+    AgentControllerOptions,
+    AgentControllerStatus,
+    AgentInterruptState,
+    AgentMessageInput,
+    AgentStreamResume,
+    PendingClientTool,
+    PendingToolApproval,
+    SendOptions,
+    UIMessage,
+} from "../types";
 
-export type { SetMessagesInput, SubmitInput } from "../types/controller";
-
-/** Options for `useAgent`. */
-export type UseAgentOptions<
+export interface UseAgentOptions<
     TApp = unknown,
-    TAgentName extends AgentNameFromApp<TApp> = AgentNameFromApp<TApp>,
-> = AgentChatControllerOptions<TApp, TAgentName>;
-
-/** Return type of `useAgent`. */
-export interface UseAgentResult<
-    TApp = unknown,
-    TAgentName extends AgentNameFromApp<TApp> = AgentNameFromApp<TApp>,
-> {
-    /** Stable local chat id. */
-    id: ComputedRef<string>;
-    /** Conversation messages. */
-    messages: ComputedRef<UIMessage[]>;
-    /** Current request status. */
-    status: ComputedRef<AgentStatus>;
-    /** Latest client error. */
-    error: ComputedRef<AgentClientError | undefined>;
-    /** Latest stream id. */
-    streamId: ComputedRef<string | undefined>;
-    /** Latest run id. */
-    runId: ComputedRef<string | undefined>;
-    /** Conversation id, when configured. */
-    conversationId: ComputedRef<string | undefined>;
-    /** True while a request is active. */
-    isLoading: ComputedRef<boolean>;
-    /** True while streaming events are being consumed. */
-    isStreaming: ComputedRef<boolean>;
-    /** Pending tool approvals. */
-    pendingToolApprovals: ComputedRef<PendingToolApproval[]>;
-    /** Sends a message. */
-    sendMessage<
-        const TModalities extends ModalitiesForAgent<TApp, TAgentName> | undefined = undefined,
-    >(
-        input: SendMessageInputForAgent<TApp, TAgentName, TModalities>,
-        options?: { signal?: AbortSignal },
-    ): Promise<SendResult>;
-    /** Retries the most recent user message. */
-    regenerate(): Promise<void>;
-    /** Retries one user message. */
-    retryMessage(localId: string): Promise<RetryResult>;
-    /** Stops the active run or stream. */
-    stop(): void;
-    /** Resumes one stream. */
-    resumeStream(options: { streamId: string; afterSeq?: number }): Promise<void>;
-    /** Resumes the active conversation stream. */
-    resumeConversation(options?: { afterSeq?: number }): Promise<void>;
-    /** Approves or denies a tool call. */
-    approveToolCall(params: ApproveToolCallParams): Promise<void>;
-    /** Clears the latest error. */
-    clearError(): void;
-    /** Resets local state. */
-    reset(): void;
-    /** Replaces the local messages. */
-    setMessages(input: SetMessagesInput): void;
+    TName extends AgentNameOf<TApp> = AgentNameOf<TApp>,
+> extends Pick<
+        AgentControllerOptions<TApp, TName>,
+        "context" | "threadId" | "toolHandlers" | "onEvent" | "onFinish" | "onError"
+    > {
+    initialMessages?: AgentControllerOptions<TApp, TName>["initialMessages"];
+    initialState?: unknown;
+    resume?: AgentStreamResume;
+    initialInterruptState?: AgentInterruptState;
 }
+
+export type UseAgentResult<TApp = unknown, TName extends AgentNameOf<TApp> = AgentNameOf<TApp>> = {
+    messages: ComputedRef<UIMessage[]>;
+    state: ComputedRef<unknown>;
+    status: ComputedRef<AgentControllerStatus>;
+    error: ComputedRef<BetterAgentClientError | undefined>;
+    runId: ComputedRef<string | undefined>;
+    threadId: ComputedRef<string | undefined>;
+    isRunning: ComputedRef<boolean>;
+    pendingClientTools: ComputedRef<PendingClientTool[]>;
+    pendingToolApprovals: ComputedRef<PendingToolApproval[]>;
+    sendMessage(input: AgentMessageInput, options?: SendOptions<TApp, TName>): Promise<void>;
+    stop(): void;
+    resume(input?: AgentStreamResume): Promise<void>;
+    approveToolCall(interruptId: string, metadata?: Record<string, unknown>): Promise<void>;
+    rejectToolCall(interruptId: string, metadata?: Record<string, unknown> | string): Promise<void>;
+    setMessages: AgentController<TApp, TName>["setMessages"];
+} & (AgentHasMemory<TApp, TName> extends true
+    ? {
+          loadMessages(threadId?: string): Promise<void>;
+          selectThread(threadId: string): Promise<void>;
+          clearThread(): void;
+      }
+    : Record<never, never>);

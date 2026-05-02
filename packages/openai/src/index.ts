@@ -1,0 +1,22 @@
+export { createOpenAI, openai } from "./model";
+export type {
+    CreateOpenAIOptions,
+    OpenAIGenerationProviderOptions,
+    OpenAIEmbeddingModelId,
+    OpenAIEmbeddingModel,
+    OpenAIEmbeddingProviderOptions,
+    OpenAIImageModelId,
+    OpenAIImageModel,
+    OpenAIImageProviderOptions,
+    OpenAIModel,
+    OpenAIModelId,
+    OpenAIProvider,
+    OpenAISpeechModelId,
+    OpenAITextModel,
+    OpenAITextModelId,
+    OpenAISpeechModel,
+    OpenAISpeechProviderOptions,
+    OpenAITranscriptionModelId,
+    OpenAITranscriptionModel,
+    OpenAITranscriptionProviderOptions,
+} from "./model";

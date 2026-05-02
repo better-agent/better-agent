@@ -1,5 +1,6 @@
 {
     "$schema": "https://turbo.build/schema.json",
+    "concurrency": "20",
     "globalDependencies": ["tsconfig.base.json", "biome.json", "bun.lock"],
     "tasks": {
         "build": {

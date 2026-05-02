@@ -1,0 +1,15 @@
+export type {
+    AgentCapabilities,
+    ExecutionCapabilities,
+    HumanInTheLoopCapabilities,
+    IdentityCapabilities,
+    MultiAgentCapabilities,
+    MultimodalCapabilities,
+    MultimodalInputCapabilities,
+    MultimodalOutputCapabilities,
+    OutputCapabilities,
+    ReasoningCapabilities,
+    StateCapabilities,
+    ToolsCapabilities,
+    TransportCapabilities,
+} from "@ag-ui/core";

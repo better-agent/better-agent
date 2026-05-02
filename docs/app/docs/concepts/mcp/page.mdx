@@ -1,0 +1,163 @@
+---
+title: "MCP"
+description: "Connect agents to MCP servers."
+icon: network
+---
+
+# MCP
+
+Better Agent can connect to
+[Model Context Protocol](https://modelcontextprotocol.io/) servers and expose
+their tools to agents. Use `mcpTools` when you want an agent to call tools from
+GitHub, local files, databases, internal services, or any MCP-compatible server.
+
+## Add MCP tools
+
+Create an MCP tool source, then pass it to the agent's `tools` option.
+
+```typescript
+import { betterAgent, defineAgent } from "@better-agent/core";
+import { mcpTools } from "@better-agent/core/mcp";
+import { openai } from "@better-agent/openai";
+
+const githubTools = mcpTools({
+  servers: {
+    github: {
+      transport: {
+        type: "http",
+        url: "https://api.githubcopilot.com/mcp",
+      },
+    },
+  },
+});
+
+const devAgent = defineAgent({
+  name: "dev",
+  model: openai("gpt-5.5"),
+  instruction: "You help with development tasks.",
+  tools: githubTools,
+});
+
+export const app = betterAgent({ agents: [devAgent] });
+```
+
+MCP tools are discovered on first use and cached. They run as server tools, so
+the agent can call them during the normal tool loop.
+
+## Local servers
+
+Use `stdio` for MCP servers that run as local processes.
+
+```typescript
+const filesystemTools = mcpTools({
+  servers: {
+    filesystem: {
+      transport: {
+        type: "stdio",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem", "./data"],
+      },
+    },
+  },
+});
+```
+
+Set `cwd`, `env`, or `stderr` when the local process needs a working directory,
+environment variables, or custom stderr handling.
+
+## Multiple servers
+
+Pass multiple servers when an agent needs tools from more than one source.
+
+```typescript
+const tools = mcpTools({
+  servers: {
+    github: {
+      transport: { type: "http", url: "https://api.githubcopilot.com/mcp" },
+      prefix: "gh",
+    },
+    filesystem: {
+      transport: {
+        type: "stdio",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem", "./data"],
+      },
+      prefix: "fs",
+    },
+  },
+});
+```
+
+Tool names must be unique. Use `prefix` to avoid collisions. A tool named
+`search` becomes `gh_search` or `fs_search`.
+
+For full control, use `mapToolName`.
+
+```typescript
+mcpTools({
+  servers: {
+    api: {
+      transport: { type: "http", url: "https://mcp.example.com" },
+      mapToolName: ({ serverName, tool }) => `${serverName}__${tool.name}`,
+    },
+  },
+});
+```
+
+## Mix with local tools
+
+MCP sources can be combined with local tools and provider tools by using a
+tools function.
+
+```typescript
+import { openai } from "@better-agent/openai";
+
+const agent = defineAgent({
+  name: "assistant",
+  model: openai("gpt-5.5"),
+  instruction: "You help users with workspace tasks.",
+  tools: async (ctx) => [
+    searchDocsTool,
+    ...(await githubTools(ctx)),
+    openai.tools.webSearch({ searchContextSize: "medium" }),
+  ],
+});
+```
+
+See [Tools](/docs/concepts/tools) for local tools and provider tools.
+
+## Refresh and shutdown
+
+Call `reload()` when the MCP server changes and you want to fetch its tools
+again.
+
+```typescript
+await githubTools.reload();
+```
+
+Call `dispose()` during server shutdown to close MCP connections and stop local
+stdio processes.
+
+```typescript
+await githubTools.dispose();
+```
+
+## Existing clients
+
+If you already created and connected an MCP `Client`, pass it as `client`.
+
+```typescript
+mcpTools({
+  servers: {
+    internal: {
+      client: existingClient,
+    },
+  },
+});
+```
+
+## Advanced API
+
+`mcpTools` covers most apps. For lower-level control, import
+`createMCPClient`, `listAllMCPTools`, and `convertMCPTools` from
+`@better-agent/core/mcp`.

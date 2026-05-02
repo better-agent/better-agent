@@ -1,2383 +1,1723 @@
-import "./setup";
-import assert from "node:assert/strict";
-import { describe, test } from "node:test";
-import type { RunResult } from "@better-agent/core";
-import { createAgentChatController } from "../src/core/controller";
+import { describe, expect, test } from "bun:test";
+import type { AgentEvent, AgentMessage, MemoryMessage, RunResult } from "@better-agent/core";
+import { EventType } from "@better-agent/core";
+import { createAgentController } from "../src/core/controller";
 import type {
+    AgentControllerFinish,
     BetterAgentClient,
-    ClientEvent,
-    RequestOptions,
-    StreamRequestOptions,
-} from "../src/types/client";
+    ClientMemoryThread,
+    ClientThreadRuntime,
+    UIMessage,
+} from "../src/types";
+import { fromAgentMessages } from "../src/ui/convert";
 
-type Deferred<T> = {
-    promise: Promise<T>;
-    resolve(value: T): void;
-    reject(error: unknown): void;
-};
+function mockClient(
+    streamImpl: () => AsyncIterable<AgentEvent>,
+    overrides: Record<string, unknown> & {
+        run?: (agentName: unknown, input: unknown) => Promise<RunResult>;
+        resumeRun?: (agentName: unknown, input: unknown) => Promise<RunResult>;
+        stream?: (agentName: unknown, input: unknown) => AsyncIterable<AgentEvent>;
+        abortRun?: (runId: string) => Promise<void>;
+        resumeStream?: (input: {
+            runId: string;
+            afterSequence?: number;
+        }) => AsyncIterable<AgentEvent>;
+        memory?: {
+            thread?: ClientMemoryThread;
+            messages?: MemoryMessage[];
+            runtime?: ClientThreadRuntime;
+            listMessages?: (
+                threadId: string,
+                input?: { limit?: number; beforeRunId?: string },
+            ) => Promise<MemoryMessage[]> | MemoryMessage[];
+        };
+    } = {},
+): BetterAgentClient<unknown> {
+    const run =
+        overrides.run ??
+        overrides.resumeRun ??
+        (async () => {
+            throw new Error("unimplemented");
+        });
+    const abort =
+        overrides.abortRun ??
+        (async () => {
+            return;
+        });
+    const resumeStream =
+        overrides.resumeStream ??
+        (async function* () {} as (input: {
+            runId: string;
+            afterSequence?: number;
+        }) => AsyncIterable<AgentEvent>);
 
-const deferred = <T>(): Deferred<T> => {
-    let resolve!: (value: T) => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<T>((res, rej) => {
-        resolve = res;
-        reject = rej;
-    });
-    return { promise, resolve, reject };
-};
+    const runs = {
+        abort,
+        resumeStream,
+    };
 
-const abortError = (message = "Aborted") => {
-    const error = new Error(message);
-    error.name = "AbortError";
-    return error;
-};
+    const client = {
+        agent(agentName) {
+            const handle = {
+                runs,
+                run(input: unknown) {
+                    return run(agentName, input);
+                },
+                stream: (input: unknown) => overrides.stream?.(agentName, input) ?? streamImpl(),
+            };
+            if (overrides.memory) {
+                return {
+                    ...handle,
+                    memory: {
+                        threads: {
+                            list: async () =>
+                                overrides.memory?.thread ? [overrides.memory.thread] : [],
+                            create: async () =>
+                                overrides.memory?.thread ??
+                                ({
+                                    id: "thread_1",
+                                    agentName: String(agentName),
+                                    createdAt: 1,
+                                    updatedAt: 1,
+                                } as ClientMemoryThread),
+                            get: async () => overrides.memory?.thread,
+                            update: async () =>
+                                overrides.memory?.thread ??
+                                ({
+                                    id: "thread_1",
+                                    agentName: String(agentName),
+                                    createdAt: 1,
+                                    updatedAt: 1,
+                                } as ClientMemoryThread),
+                            delete: async () => {},
+                            runtime: async () => overrides.memory?.runtime ?? {},
+                        },
+                        messages: {
+                            list: async (threadId, input) =>
+                                overrides.memory?.listMessages
+                                    ? overrides.memory.listMessages(threadId, input)
+                                    : (overrides.memory?.messages ?? []),
+                        },
+                    },
+                };
+            }
+            return handle;
+        },
+        runs,
+    } as BetterAgentClient<unknown>;
 
-async function* toAsyncIterable<T>(values: readonly T[]): AsyncIterable<T> {
-    for (const value of values) {
-        yield value;
-    }
+    return client;
 }
 
-const createRunResult = (overrides?: Record<string, unknown>): RunResult =>
-    ({
-        response: {
-            output: [],
-            finishReason: "stop",
-            usage: {},
-        },
-        ...(overrides ?? {}),
-    }) as RunResult;
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+        resolve = done;
+    });
 
-const createMockClient = () => {
-    const runCalls: Array<{
-        agent: string;
-        input: Record<string, unknown>;
-        options?: RequestOptions;
-    }> = [];
-    const streamCalls: Array<{
-        agent: string;
-        input: Record<string, unknown>;
-        options?: StreamRequestOptions;
-    }> = [];
-    const resumeStreamCalls: Array<{
-        agent: string;
-        input: { streamId: string; afterSeq?: number };
-        options?: RequestOptions;
-    }> = [];
-    const resumeConversationCalls: Array<{
-        agent: string;
-        input: { conversationId: string; afterSeq?: number };
-        options?: RequestOptions;
-    }> = [];
-    const loadConversationCalls: Array<{
-        agent: string;
-        conversationId: string;
-        options?: RequestOptions;
-    }> = [];
-    const toolApprovalCalls: unknown[] = [];
+    return { promise, resolve };
+}
 
-    let runImpl: (
-        agent: string,
-        input: Record<string, unknown>,
-        options?: RequestOptions,
-    ) => Promise<RunResult> = async () => createRunResult();
-
-    let streamImpl: (
-        agent: string,
-        input: Record<string, unknown>,
-        options?: StreamRequestOptions,
-    ) => AsyncIterable<ClientEvent> = () => toAsyncIterable([]);
-
-    let resumeStreamImpl: (
-        agent: string,
-        input: { streamId: string; afterSeq?: number },
-        options?: RequestOptions,
-    ) => AsyncIterable<ClientEvent> = () => toAsyncIterable([]);
-
-    let resumeConversationImpl: (
-        agent: string,
-        input: { conversationId: string; afterSeq?: number },
-        options?: RequestOptions,
-    ) => AsyncIterable<ClientEvent> = () => toAsyncIterable([]);
-
-    let loadConversationImpl: (
-        agent: string,
-        conversationId: string,
-        options?: RequestOptions,
-    ) => Promise<{ items: Array<Record<string, unknown>> } | null> = async () => null;
-
-    const client: BetterAgentClient = {
-        run(agent, input, options) {
-            runCalls.push({
-                agent: String(agent),
-                input: input as Record<string, unknown>,
-                ...(options !== undefined ? { options } : {}),
-            });
-            return runImpl(String(agent), input as Record<string, unknown>, options);
-        },
-        stream(agent, input, options) {
-            streamCalls.push({
-                agent: String(agent),
-                input: input as Record<string, unknown>,
-                ...(options !== undefined ? { options } : {}),
-            });
-            return streamImpl(String(agent), input as Record<string, unknown>, options);
-        },
-        resumeStream(agent, input, options) {
-            resumeStreamCalls.push({
-                agent: String(agent),
-                input,
-                ...(options !== undefined ? { options } : {}),
-            });
-            return resumeStreamImpl(String(agent), input, options);
-        },
-        resumeConversation(agent, input, options) {
-            resumeConversationCalls.push({
-                agent: String(agent),
-                input,
-                ...(options !== undefined ? { options } : {}),
-            });
-            return resumeConversationImpl(String(agent), input, options);
-        },
-        async loadConversation(agent, conversationId, options) {
-            loadConversationCalls.push({
-                agent: String(agent),
-                conversationId,
-                ...(options !== undefined ? { options } : {}),
-            });
-            return loadConversationImpl(String(agent), conversationId, options);
-        },
-        async submitToolResult() {},
-        async submitToolApproval(req) {
-            toolApprovalCalls.push(req);
-        },
-        async abortRun() {
-            return;
-        },
-    } as BetterAgentClient;
-
+function runStartedEvent(runId: string, messages: AgentMessage[] = []): AgentEvent {
     return {
-        client,
-        runCalls,
-        streamCalls,
-        resumeStreamCalls,
-        resumeConversationCalls,
-        loadConversationCalls,
-        toolApprovalCalls,
-        setRunImpl(
-            impl: (
-                agent: string,
-                input: Record<string, unknown>,
-                options?: RequestOptions,
-            ) => Promise<RunResult>,
-        ) {
-            runImpl = impl;
-        },
-        setStreamImpl(
-            impl: (
-                agent: string,
-                input: Record<string, unknown>,
-                options?: StreamRequestOptions,
-            ) => AsyncIterable<ClientEvent>,
-        ) {
-            streamImpl = impl;
-        },
-        setResumeStreamImpl(
-            impl: (
-                agent: string,
-                input: { streamId: string; afterSeq?: number },
-                options?: RequestOptions,
-            ) => AsyncIterable<ClientEvent>,
-        ) {
-            resumeStreamImpl = impl;
-        },
-        setResumeConversationImpl(
-            impl: (
-                agent: string,
-                input: { conversationId: string; afterSeq?: number },
-                options?: RequestOptions,
-            ) => AsyncIterable<ClientEvent>,
-        ) {
-            resumeConversationImpl = impl;
-        },
-        setLoadConversationImpl(
-            impl: (
-                agent: string,
-                conversationId: string,
-                options?: RequestOptions,
-            ) => Promise<{ items: Array<Record<string, unknown>> } | null>,
-        ) {
-            loadConversationImpl = impl;
-        },
-    };
-};
+        type: EventType.RUN_STARTED,
+        timestamp: Date.now(),
+        threadId: "",
+        runId,
+        input: { runId, threadId: "", messages, tools: [], context: [] },
+    } as unknown as AgentEvent;
+}
 
-describe("AgentChatController", () => {
-    test("merges controller modelOptions with per-message modelOptions", async () => {
-        const mock = createMockClient();
-        let seenInput: Record<string, unknown> | undefined;
+function hasResume(input: unknown): input is { resume: unknown[]; threadId?: string } {
+    return Boolean(input && typeof input === "object" && "resume" in input);
+}
 
-        mock.setRunImpl(async (_agent, input) => {
-            seenInput = input;
-            return createRunResult();
-        });
+async function* assistantTextStream(text: string): AsyncIterable<AgentEvent> {
+    yield {
+        type: EventType.TEXT_MESSAGE_CONTENT,
+        timestamp: Date.now(),
+        messageId: "assistant_1",
+        delta: text,
+    } as AgentEvent;
+}
 
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            modelOptions: {
-                reasoningEffort: "low",
-                reasoningSummary: "auto",
-                textVerbosity: "low",
-            },
-        });
-
-        await controller.sendMessage({
-            input: "Hi",
-            modelOptions: {
-                reasoningEffort: "high",
-            },
-        });
-
-        assert.deepEqual(seenInput?.modelOptions, {
-            reasoningEffort: "high",
-            reasoningSummary: "auto",
-            textVerbosity: "low",
-        });
-    });
-
-    test("transitions ready -> submitted -> streaming -> ready for stream delivery", async () => {
-        const mock = createMockClient();
-        const statuses: string[] = [];
-        const finishCalls: Array<{
-            runId?: string;
-            streamId?: string;
-            finishReason?: string;
-            usage?: RunResult["response"]["usage"];
-        }> = [];
-
-        mock.setStreamImpl((_agent, _input, options) => {
-            options?.onResponse?.(
-                new Response(null, {
-                    status: 200,
-                    headers: {
-                        "x-run-id": "run_1",
-                        "x-stream-id": "stream_1",
-                    },
-                }),
-            );
-            return toAsyncIterable([
-                {
-                    type: "TEXT_MESSAGE_START",
-                    timestamp: 1,
-                    messageId: "msg_1",
-                    role: "assistant",
-                },
-                {
-                    type: "TEXT_MESSAGE_CONTENT",
-                    timestamp: 2,
-                    messageId: "msg_1",
-                    delta: "Hello",
-                },
-                {
-                    type: "TEXT_MESSAGE_END",
-                    timestamp: 3,
-                    messageId: "msg_1",
-                },
-                {
-                    type: "RUN_FINISHED",
-                    timestamp: 4,
-                    runId: "run_1",
-                    agentName: "support",
-                    result: createRunResult(),
-                } as unknown as ClientEvent,
-            ]);
-        });
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "stream",
-            onFinish: (params) => {
-                finishCalls.push({
-                    runId: params.runId,
-                    streamId: params.streamId,
-                    finishReason: params.finishReason,
-                    usage: params.usage,
-                });
-            },
-        });
-
-        controller.subscribe(() => {
-            statuses.push(controller.getStatus());
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.equal(controller.getStatus(), "ready");
-        assert.equal(statuses[0], "submitted");
-        assert.ok(statuses.includes("streaming"));
-        assert.equal(statuses[statuses.length - 1], "ready");
-        assert.equal(controller.getMessages()[0]?.parts[0]?.type, "text");
-        assert.equal(controller.getStreamId(), "stream_1");
-        assert.equal(finishCalls[0]?.runId, "run_1");
-        assert.equal(finishCalls[0]?.streamId, "stream_1");
-        assert.equal(finishCalls[0]?.finishReason, "stop");
-        assert.deepEqual(finishCalls[0]?.usage, {});
-    });
-
-    test("onFinish receives structured output from final run delivery", async () => {
-        const mock = createMockClient();
-        let finishStructured: unknown;
-
-        mock.setRunImpl(async () => createRunResult({ structured: { ok: true } }));
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            onFinish: (params) => {
-                finishStructured = (params as { structured?: unknown }).structured;
-            },
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.deepEqual(finishStructured, { ok: true });
-    });
-
-    test("onFinish receives structured output from streamed RUN_FINISHED events", async () => {
-        const mock = createMockClient();
-        let finishStructured: unknown;
-
-        mock.setStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_STARTED",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                    runInput: { input: "Hi" },
-                    streamId: "stream_1",
-                } as unknown as ClientEvent,
-                {
-                    type: "RUN_FINISHED",
-                    timestamp: 2,
-                    runId: "run_1",
-                    agentName: "support",
-                    streamId: "stream_1",
-                    result: createRunResult({ structured: { ok: true } }),
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "stream",
-            onFinish: (params) => {
-                finishStructured = (params as { structured?: unknown }).structured;
-            },
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.deepEqual(finishStructured, { ok: true });
-    });
-
-    test("approveToolCall forwards the latest run id and optional approval fields", async () => {
-        const mock = createMockClient();
-        mock.setRunImpl(async () => createRunResult({ runId: "run_1" }));
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-        await controller.approveToolCall({
-            toolCallId: "call_1",
-            decision: "approved",
-            note: "looks good",
-            actorId: "user_1",
-        });
-
-        assert.deepEqual(mock.toolApprovalCalls, [
+function approvalInterruptEvent(): AgentEvent {
+    return {
+        type: EventType.RUN_FINISHED,
+        timestamp: Date.now(),
+        runId: "run_1",
+        threadId: "",
+        outcome: "interrupt",
+        interrupts: [
             {
-                agent: "support",
-                runId: "run_1",
-                toolCallId: "call_1",
-                decision: "approved",
-                note: "looks good",
-                actorId: "user_1",
+                id: "tool_1:approval",
+                reason: "tool_approval_pending",
+                toolCallId: "tool_1",
+            },
+        ],
+    } as AgentEvent;
+}
+
+function messageWithToolCall(): UIMessage {
+    return {
+        id: "assistant_1",
+        role: "assistant",
+        parts: [
+            {
+                type: "tool-call",
+                toolCallId: "tool_1",
+                toolName: "deleteFile",
+                input: JSON.stringify({ path: "/tmp/x" }),
+                inputText: '{"path":"/tmp/x"}',
+                state: "input-available",
+            },
+        ],
+    };
+}
+
+function messageWithToolCalls(): UIMessage {
+    return {
+        id: "assistant_tools",
+        role: "assistant",
+        parts: [
+            {
+                type: "tool-call",
+                toolCallId: "tool_1",
+                toolName: "getWeather",
+                input: { city: "Addis Ababa" },
+                inputText: '{"city":"Addis Ababa"}',
+                state: "input-available",
+            },
+            {
+                type: "tool-call",
+                toolCallId: "tool_2",
+                toolName: "getLocation",
+                input: { precise: true },
+                inputText: '{"precise":true}',
+                state: "input-available",
+            },
+        ],
+    };
+}
+
+describe("AgentController lifecycle", () => {
+    test("onFinish success when stream ends without error", async () => {
+        const finishes: AgentControllerFinish[] = [];
+        const client = mockClient(async function* () {
+            /* no events */
+        });
+        const c = createAgentController(client.agent("assistant" as never), {
+            onFinish: (f) => {
+                finishes.push(f);
+            },
+        });
+        await c.sendMessage("hello");
+        expect(finishes).toEqual([
+            {
+                generatedMessages: [],
+                messages: expect.any(Array),
+                runId: undefined,
+                threadId: undefined,
+                isAbort: false,
+                isDisconnect: false,
+                isError: false,
+                isInterrupted: false,
+                pendingClientTools: [],
+                pendingToolApprovals: [],
             },
         ]);
     });
 
-    test("approveToolCall throws when no run id is available", async () => {
-        const mock = createMockClient();
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
+    test("onFinish error and onError when RUN_ERROR", async () => {
+        const finishes: AgentControllerFinish[] = [];
+        const errors: string[] = [];
+        const client = mockClient(async function* () {
+            yield {
+                type: EventType.RUN_ERROR,
+                timestamp: Date.now(),
+                message: "upstream failed",
+            };
         });
-
-        await assert.rejects(
-            () =>
-                controller.approveToolCall({
-                    toolCallId: "call_1",
-                    decision: "denied",
-                }),
-            /without a runId/,
-        );
+        const c = createAgentController(client.agent("assistant" as never), {
+            onFinish: (f) => {
+                finishes.push(f);
+            },
+            onError: (e) => {
+                errors.push(e.message);
+            },
+        });
+        await c.sendMessage("hello");
+        expect(finishes).toHaveLength(1);
+        expect(finishes[0]?.isError).toBe(true);
+        expect(finishes[0]?.error?.message).toBe("upstream failed");
+        expect(errors).toEqual(["upstream failed"]);
     });
 
-    test("getPendingToolApprovals and snapshot pendingToolApprovals expose deduped approval requests", () => {
-        const mock = createMockClient();
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
+    test("onEvent receives events", async () => {
+        const events: string[] = [];
+        const client = mockClient(async function* () {
+            yield {
+                type: EventType.RUN_ERROR,
+                timestamp: Date.now(),
+                message: "x",
+            };
+        });
+        const c = createAgentController(client.agent("assistant" as never), {
+            onEvent: (event) => {
+                events.push(event.type);
+            },
+        });
+        await c.sendMessage("hello");
+        expect(events).toEqual([EventType.RUN_ERROR]);
+    });
+
+    test("stop aborts the active server run", async () => {
+        const abortedRunIds: string[] = [];
+        const stream = deferred();
+        const client = mockClient(
+            async function* () {
+                yield runStartedEvent("run_1");
+                await stream.promise;
+            },
+            {
+                async abortRun(runId) {
+                    abortedRunIds.push(runId);
+                },
+            },
+        );
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialMessages: [messageWithToolCall()],
         });
 
-        controller.setMessages([
+        const sent = c.sendMessage("hello");
+        await Promise.resolve();
+        c.stop();
+        c.stop();
+        stream.resolve();
+        await sent;
+
+        expect(abortedRunIds).toEqual(["run_1"]);
+        expect(c.getSnapshot().status).toBe("ready");
+    });
+
+    test("early stop waits for run start before aborting the server run", async () => {
+        const abortedRunIds: string[] = [];
+        const start = deferred();
+        const stream = deferred();
+        const client = mockClient(
+            async function* () {
+                await start.promise;
+                yield runStartedEvent("run_late");
+                await stream.promise;
+            },
             {
-                localId: "a_1",
-                role: "assistant",
-                parts: [
+                async abortRun(runId) {
+                    abortedRunIds.push(runId);
+                },
+            },
+        );
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialMessages: [messageWithToolCall()],
+        });
+
+        const sent = c.sendMessage("hello");
+        await Promise.resolve();
+        c.stop();
+
+        expect(abortedRunIds).toEqual([]);
+
+        start.resolve();
+        stream.resolve();
+        await sent;
+
+        expect(abortedRunIds).toEqual(["run_late"]);
+        expect(c.getSnapshot().status).toBe("ready");
+    });
+
+    test("RUN_STARTED input replaces optimistic user message with server message", async () => {
+        const client = mockClient(async function* () {
+            yield runStartedEvent("run_1", [
+                { id: "server_user_1", role: "user", content: "hello" },
+            ]);
+        });
+        const c = createAgentController(client.agent("assistant" as never), {});
+
+        await c.sendMessage("hello");
+
+        expect(c.getSnapshot().messages).toEqual([
+            {
+                id: "server_user_1",
+                role: "user",
+                parts: [{ type: "text", text: "hello" }],
+            },
+        ]);
+    });
+
+    test("client tool resume appends generated messages", async () => {
+        const finishes: AgentControllerFinish[] = [];
+        const initialStream = async function* () {
+            yield {
+                type: EventType.RUN_STARTED,
+                timestamp: Date.now(),
+                runId: "run_1",
+                threadId: "",
+                input: { runId: "run_1", threadId: "", messages: [], tools: [], context: [] },
+            } as AgentEvent;
+            yield {
+                type: EventType.TOOL_CALL_START,
+                timestamp: Date.now(),
+                parentMessageId: "assistant_tool",
+                toolCallId: "tool_1",
+                toolCallName: "getWeather",
+            } as AgentEvent;
+            yield {
+                type: EventType.TOOL_CALL_ARGS,
+                timestamp: Date.now(),
+                toolCallId: "tool_1",
+                delta: '{"city":"Addis Ababa"}',
+            } as AgentEvent;
+            yield {
+                type: EventType.TOOL_CALL_END,
+                timestamp: Date.now(),
+                toolCallId: "tool_1",
+            } as AgentEvent;
+            yield {
+                type: EventType.RUN_FINISHED,
+                timestamp: Date.now(),
+                runId: "run_1",
+                threadId: "",
+                outcome: "interrupt",
+                interrupts: [
                     {
-                        type: "tool-call",
-                        callId: "call_1",
-                        name: "lookup",
-                        args: '{"query":"weather"}',
-                        toolTarget: "server",
-                        approval: {
-                            input: { city: "Addis Ababa" },
-                            meta: { source: "ui" },
-                            note: "Need approval",
-                            actorId: "reviewer_1",
-                        },
-                        status: "pending",
-                        state: "approval-requested",
+                        id: "tool_1:client_result",
+                        reason: "client_tool_pending",
+                        toolCallId: "tool_1",
+                    },
+                ],
+            } as AgentEvent;
+        };
+        const client = mockClient(initialStream, {
+            stream(_agentName, input): AsyncIterable<AgentEvent> {
+                return hasResume(input) ? assistantTextStream("Sunny") : initialStream();
+            },
+        });
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            toolHandlers: {
+                getWeather: () => "Sunny",
+            },
+            onFinish: (finish) => {
+                finishes.push(finish);
+            },
+        });
+
+        await c.sendMessage("hello");
+
+        expect(finishes).toHaveLength(1);
+        expect(finishes[0]?.messages.map((message) => message.role)).toEqual([
+            "user",
+            "assistant",
+            "assistant",
+        ]);
+        expect(finishes[0]?.generatedMessages.map((message) => message.role)).toEqual([
+            "assistant",
+            "assistant",
+        ]);
+    });
+
+    test("client tool handler result updates the existing tool part before resume output", async () => {
+        const initialStream = async function* () {
+            yield {
+                type: EventType.TOOL_CALL_START,
+                timestamp: Date.now(),
+                parentMessageId: "assistant_tool",
+                toolCallId: "tool_1",
+                toolCallName: "getWeather",
+            } as AgentEvent;
+            yield {
+                type: EventType.TOOL_CALL_ARGS,
+                timestamp: Date.now(),
+                toolCallId: "tool_1",
+                delta: '{"city":"Addis Ababa"}',
+            } as AgentEvent;
+            yield {
+                type: EventType.TOOL_CALL_END,
+                timestamp: Date.now(),
+                toolCallId: "tool_1",
+            } as AgentEvent;
+            yield {
+                type: EventType.RUN_FINISHED,
+                timestamp: Date.now(),
+                runId: "run_1",
+                threadId: "",
+                outcome: "interrupt",
+                interrupts: [
+                    {
+                        id: "tool_1:client_result",
+                        reason: "client_tool_pending",
+                        toolCallId: "tool_1",
+                    },
+                ],
+            } as AgentEvent;
+        };
+        const client = mockClient(initialStream, {
+            stream(_agentName, input): AsyncIterable<AgentEvent> {
+                return hasResume(input) ? assistantTextStream("Sunny") : initialStream();
+            },
+        });
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            toolHandlers: {
+                getWeather: () => ({ temperature: 22 }),
+            },
+        });
+
+        await c.sendMessage("weather");
+
+        const toolResultPart = c
+            .getSnapshot()
+            .messages.flatMap((message) => message.parts)
+            .find((part) => part.type === "tool-result" && part.toolCallId === "tool_1");
+
+        expect(toolResultPart).toMatchObject({
+            type: "tool-result",
+            state: "output-available",
+            result: '{"temperature":22}',
+        });
+    });
+
+    test("resolves multiple client tool interrupts in one resume call", async () => {
+        const streamCalls: unknown[] = [];
+        const initialStream = async function* () {
+            yield {
+                type: EventType.RUN_FINISHED,
+                timestamp: Date.now(),
+                runId: "run_1",
+                threadId: "thread_1",
+                outcome: "interrupt",
+                interrupts: [
+                    {
+                        id: "tool_1:client_result",
+                        reason: "client_tool_pending",
+                        toolCallId: "tool_1",
                     },
                     {
-                        type: "tool-call",
-                        callId: "call_1",
-                        name: "lookup",
-                        status: "pending",
-                        state: "approval-requested",
+                        id: "tool_2:client_result",
+                        reason: "client_tool_pending",
+                        toolCallId: "tool_2",
+                    },
+                ],
+            } as AgentEvent;
+        };
+        const client = mockClient(initialStream, {
+            stream(_agentName, input): AsyncIterable<AgentEvent> {
+                if (hasResume(input)) {
+                    streamCalls.push(input);
+                    return (async function* () {})();
+                }
+                return initialStream();
+            },
+        });
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            threadId: "thread_1",
+            initialMessages: [messageWithToolCalls()],
+            toolHandlers: {
+                getWeather: () => ({ temperature: 22 }),
+                getLocation: () => ({ lat: 1, lng: 2 }),
+            },
+        });
+
+        await c.sendMessage("continue");
+
+        expect(streamCalls).toEqual([
+            {
+                resume: [
+                    {
+                        interruptId: "tool_1:client_result",
+                        status: "resolved",
+                        payload: { status: "success", result: { temperature: 22 } },
                     },
                     {
-                        type: "tool-call",
-                        callId: "call_2",
-                        name: "ignored",
-                        status: "pending",
-                        state: "approval-approved",
+                        interruptId: "tool_2:client_result",
+                        status: "resolved",
+                        payload: { status: "success", result: { lat: 1, lng: 2 } },
+                    },
+                ],
+                threadId: "thread_1",
+            },
+        ]);
+        expect(c.getSnapshot().pendingClientTools).toEqual([]);
+    });
+
+    test("approval interrupts finish as approval pending", async () => {
+        const finishes: AgentControllerFinish[] = [];
+        const client = mockClient(async function* () {
+            yield approvalInterruptEvent();
+        });
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialMessages: [messageWithToolCall()],
+            onFinish: (finish) => {
+                finishes.push(finish);
+            },
+        });
+
+        await c.sendMessage("hello");
+
+        expect(finishes).toHaveLength(1);
+        expect(finishes[0]?.isInterrupted).toBe(true);
+        expect(finishes[0]?.interruptReason).toBe("tool_approval_pending");
+    });
+
+    test("interrupt expirations populate pending expiresAt", async () => {
+        const expiresAt = new Date(Date.now() + 30_000).toISOString();
+        const client = mockClient(async function* () {
+            yield {
+                type: EventType.RUN_FINISHED,
+                timestamp: Date.now(),
+                runId: "run_1",
+                outcome: "interrupt",
+                interrupts: [
+                    {
+                        id: "tool_1:approval",
+                        reason: "tool_approval_pending",
+                        toolCallId: "tool_1",
+                        expiresAt,
+                    },
+                    {
+                        id: "tool_2:client_result",
+                        reason: "client_tool_pending",
+                        toolCallId: "tool_2",
+                        expiresAt,
+                    },
+                ],
+            } as AgentEvent;
+        });
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialMessages: [messageWithToolCalls()],
+        });
+
+        await c.sendMessage("continue");
+
+        expect(c.getSnapshot().pendingToolApprovals[0]?.expiresAt).toBe(expiresAt);
+        expect(c.getSnapshot().pendingClientTools[0]?.expiresAt).toBe(expiresAt);
+    });
+
+    test("approveToolCall resumes approval with approved payload", async () => {
+        const finishes: AgentControllerFinish[] = [];
+        const resumeCalls: unknown[] = [];
+        const initialStream = async function* () {
+            yield approvalInterruptEvent();
+        };
+        const client = mockClient(initialStream, {
+            stream(_agentName, input): AsyncIterable<AgentEvent> {
+                if (!hasResume(input)) {
+                    return initialStream();
+                }
+                resumeCalls.push(input);
+                return (async function* () {
+                    yield {
+                        type: EventType.TOOL_CALL_RESULT,
+                        timestamp: Date.now(),
+                        toolCallId: "tool_1",
+                        content: '{"saved":true,"note":"cool"}',
+                        status: "success",
+                    } as AgentEvent;
+                    yield* assistantTextStream("Deleted");
+                })();
+            },
+        });
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialMessages: [messageWithToolCall()],
+            onFinish: (finish) => {
+                finishes.push(finish);
+            },
+        });
+
+        await c.sendMessage("delete it");
+        await c.approveToolCall("tool_1:approval");
+
+        expect(resumeCalls).toEqual([
+            {
+                resume: [
+                    {
+                        interruptId: "tool_1:approval",
+                        status: "resolved",
+                        payload: { approved: true },
                     },
                 ],
             },
         ]);
+        expect(c.getSnapshot().pendingToolApprovals).toEqual([]);
+        expect(c.getSnapshot().messages[0]?.parts[0]).toMatchObject({
+            type: "tool-call",
+            toolCallId: "tool_1",
+            state: "approval-responded",
+            approval: {
+                interruptId: "tool_1:approval",
+                needsApproval: true,
+                approved: true,
+            },
+        });
+        expect(c.getSnapshot().messages[0]?.parts[1]).toMatchObject({
+            type: "tool-result",
+            toolCallId: "tool_1",
+            state: "output-available",
+            result: { saved: true, note: "cool" },
+        });
+        expect(
+            c.getSnapshot().messages.find((message) => message.id === "assistant_1"),
+        ).toMatchObject({
+            role: "assistant",
+            parts: expect.arrayContaining([{ type: "text", text: "Deleted" }]),
+        });
+        expect(finishes.at(-1)?.isInterrupted).toBe(false);
+    });
 
-        const expected = [
+    test("resumes multiple approval interrupts after all decisions are provided", async () => {
+        const streamCalls: unknown[] = [];
+        const initialStream = async function* () {
+            yield {
+                type: EventType.RUN_FINISHED,
+                timestamp: Date.now(),
+                runId: "run_1",
+                threadId: "thread_1",
+                outcome: "interrupt",
+                interrupts: [
+                    {
+                        id: "tool_1:approval",
+                        reason: "tool_approval_pending",
+                        toolCallId: "tool_1",
+                    },
+                    {
+                        id: "tool_2:approval",
+                        reason: "tool_approval_pending",
+                        toolCallId: "tool_2",
+                        metadata: { risk: "low" },
+                    },
+                ],
+            } as AgentEvent;
+        };
+        const client = mockClient(initialStream, {
+            stream(_agentName, input): AsyncIterable<AgentEvent> {
+                if (hasResume(input)) {
+                    streamCalls.push(input);
+                    return (async function* () {})();
+                }
+                return initialStream();
+            },
+        });
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            threadId: "thread_1",
+            initialMessages: [messageWithToolCalls()],
+        });
+
+        await c.sendMessage("continue");
+
+        expect(c.getSnapshot().pendingToolApprovals).toHaveLength(2);
+        await c.approveToolCall("tool_1:approval");
+
+        expect(streamCalls).toEqual([]);
+        expect(c.getSnapshot().pendingToolApprovals).toHaveLength(1);
+        expect(c.getSnapshot().pendingToolApprovals[0]?.interruptId).toBe("tool_2:approval");
+
+        await c.rejectToolCall("tool_2:approval", "No thanks");
+
+        expect(streamCalls).toEqual([
             {
-                toolCallId: "call_1",
-                toolName: "lookup",
-                args: '{"query":"weather"}',
-                toolTarget: "server",
-                input: { city: "Addis Ababa" },
-                meta: { source: "ui" },
-                note: "Need approval",
-                actorId: "reviewer_1",
+                resume: [
+                    {
+                        interruptId: "tool_1:approval",
+                        status: "resolved",
+                        payload: { approved: true },
+                    },
+                    {
+                        interruptId: "tool_2:approval",
+                        status: "resolved",
+                        payload: { approved: false, metadata: { note: "No thanks" } },
+                    },
+                ],
+                threadId: "thread_1",
+            },
+        ]);
+        expect(c.getSnapshot().pendingToolApprovals).toEqual([]);
+    });
+
+    test("rejectToolCall resumes approval with denied payload", async () => {
+        const resumeCalls: unknown[] = [];
+        const client = mockClient(async function* () {}, {
+            stream(_agentName, input): AsyncIterable<AgentEvent> {
+                resumeCalls.push(input);
+                return (async function* () {
+                    yield {
+                        type: EventType.TOOL_CALL_RESULT,
+                        timestamp: Date.now(),
+                        toolCallId: "tool_1",
+                        content: '{"approved":false,"metadata":{"note":"Not allowed"}}',
+                        status: "denied",
+                    } as AgentEvent;
+                    yield* assistantTextStream("Cancelled");
+                })();
+            },
+        });
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialMessages: [messageWithToolCall()],
+            initialInterruptState: {
+                runId: "run_1",
+                status: "interrupted",
+                pendingToolApprovals: [
+                    {
+                        interruptId: "tool_1:approval",
+                        runId: "run_1",
+                        toolCallId: "tool_1",
+                        toolName: "deleteFile",
+                        input: { path: "/tmp/x" },
+                    },
+                ],
+            },
+        });
+
+        await c.rejectToolCall("tool_1:approval", "Not allowed");
+
+        expect(resumeCalls).toEqual([
+            {
+                resume: [
+                    {
+                        interruptId: "tool_1:approval",
+                        status: "resolved",
+                        payload: { approved: false, metadata: { note: "Not allowed" } },
+                    },
+                ],
+            },
+        ]);
+        expect(c.getSnapshot().pendingToolApprovals).toEqual([]);
+        const deniedPart = c
+            .getSnapshot()
+            .messages.flatMap((message) => message.parts)
+            .find((part) => part.type === "tool-call" && part.toolCallId === "tool_1");
+        expect(deniedPart).toMatchObject({
+            type: "tool-call",
+            toolCallId: "tool_1",
+            state: "approval-responded",
+            approval: {
+                interruptId: "tool_1:approval",
+                needsApproval: true,
+                approved: false,
+                metadata: {
+                    note: "Not allowed",
+                },
+            },
+        });
+        expect(
+            c.getSnapshot().messages.find((message) => message.id === "assistant_1"),
+        ).toMatchObject({
+            role: "assistant",
+            parts: expect.arrayContaining([{ type: "text", text: "Cancelled" }]),
+        });
+    });
+
+    test("hydrated denied approvals stay on the tool-call approval state", () => {
+        const messages = fromAgentMessages([
+            {
+                id: "assistant_1",
+                role: "assistant",
+                content: "",
+                toolCalls: [
+                    {
+                        id: "tool_1",
+                        type: "function",
+                        function: {
+                            name: "deleteFile",
+                            arguments: '{"path":"/tmp/x"}',
+                        },
+                    },
+                ],
+            },
+            {
+                id: "tool_1_result",
+                role: "tool",
+                toolCallId: "tool_1",
+                content: '{"approved":false,"metadata":{"note":"Not allowed"}}',
+                status: "denied",
+                approval: {
+                    approved: false,
+                    metadata: {
+                        note: "Not allowed",
+                    },
+                },
+            },
+        ] as AgentMessage[]);
+
+        const deniedPart = messages
+            .flatMap((message) => message.parts)
+            .find((part) => part.type === "tool-call" && part.toolCallId === "tool_1");
+        expect(deniedPart).toMatchObject({
+            type: "tool-call",
+            toolCallId: "tool_1",
+            state: "approval-responded",
+            approval: {
+                interruptId: "tool_1:approval",
+                needsApproval: true,
+                approved: false,
+                metadata: {
+                    note: "Not allowed",
+                },
+            },
+        });
+    });
+
+    test("hydrated approved tool results keep approval state and parsed output", () => {
+        const messages = fromAgentMessages([
+            {
+                id: "assistant_1",
+                role: "assistant",
+                content: "",
+                toolCalls: [
+                    {
+                        id: "tool_1",
+                        type: "function",
+                        function: {
+                            name: "save_note",
+                            arguments: '{"note":"cool"}',
+                        },
+                    },
+                ],
+            },
+            {
+                id: "tool_1_result",
+                role: "tool",
+                toolCallId: "tool_1",
+                content: '{"saved":true,"note":"cool"}',
+                status: "success",
+                approval: {
+                    approved: true,
+                },
+            },
+        ] as AgentMessage[]);
+
+        const parts = messages[0]?.parts.filter(
+            (part) => part.type !== "text" || part.text.length > 0,
+        );
+
+        expect(parts).toMatchObject([
+            {
+                type: "tool-call",
+                toolCallId: "tool_1",
+                state: "approval-responded",
+                approval: {
+                    interruptId: "tool_1:approval",
+                    needsApproval: true,
+                    approved: true,
+                },
+            },
+            {
+                type: "tool-result",
+                toolCallId: "tool_1",
+                state: "output-available",
+                result: { saved: true, note: "cool" },
+            },
+        ]);
+    });
+
+    test("approval resume can continue into client tool interrupt", async () => {
+        const resumeCalls: unknown[] = [];
+        const initialStream = async function* () {
+            yield approvalInterruptEvent();
+        };
+        const client = mockClient(initialStream, {
+            stream(_agentName, input): AsyncIterable<AgentEvent> {
+                if (!hasResume(input)) {
+                    return initialStream();
+                }
+                resumeCalls.push(input);
+                if (resumeCalls.length === 1) {
+                    return (async function* () {
+                        yield {
+                            type: EventType.RUN_FINISHED,
+                            timestamp: Date.now(),
+                            runId: "run_2",
+                            outcome: "interrupt",
+                            interrupts: [
+                                {
+                                    id: "tool_2:client_result",
+                                    reason: "client_tool_pending",
+                                    toolCallId: "tool_2",
+                                },
+                            ],
+                        } as AgentEvent;
+                    })();
+                }
+
+                return assistantTextStream("Done");
+            },
+        });
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialMessages: [messageWithToolCalls()],
+            toolHandlers: {
+                getLocation: () => ({ lat: 1, lng: 2 }),
+            },
+        });
+
+        await c.sendMessage("delete it");
+        await c.approveToolCall("tool_1:approval");
+
+        expect(resumeCalls).toEqual([
+            {
+                resume: [
+                    {
+                        interruptId: "tool_1:approval",
+                        status: "resolved",
+                        payload: { approved: true },
+                    },
+                ],
+            },
+            {
+                resume: [
+                    {
+                        interruptId: "tool_2:client_result",
+                        status: "resolved",
+                        payload: { status: "success", result: { lat: 1, lng: 2 } },
+                    },
+                ],
+            },
+        ]);
+        expect(c.getSnapshot().pendingClientTools).toEqual([]);
+        expect(c.getSnapshot().pendingToolApprovals).toEqual([]);
+        expect(c.getSnapshot().messages.at(-1)).toMatchObject({
+            role: "assistant",
+            parts: [{ type: "text", text: "Done" }],
+        });
+    });
+
+    test("messages initialize the snapshot", () => {
+        const messages: UIMessage[] = [
+            {
+                id: "user_1",
+                role: "user",
+                parts: [{ type: "text", text: "hello" }],
             },
         ];
-
-        assert.deepEqual(controller.getPendingToolApprovals(), expected);
-        assert.deepEqual(controller.getSnapshot().pendingToolApprovals, expected);
-    });
-
-    test("marks optimistic messages failed on stream error", async () => {
-        const mock = createMockClient();
-        mock.setStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_ERROR",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                    error: { message: "Boom" },
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "stream",
-            optimisticUserMessage: { enabled: true, onError: "fail" },
+        const client = mockClient(async function* () {
+            /* no events */
         });
 
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.equal(controller.getStatus(), "error");
-        assert.equal(controller.getMessages()[0]?.status, "failed");
-        assert.equal(controller.getMessages()[0]?.error, "Boom");
-    });
-
-    test("removes optimistic messages when configured to remove on error", async () => {
-        const mock = createMockClient();
-        mock.setStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_ERROR",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                    error: { message: "Boom" },
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "stream",
-            optimisticUserMessage: { enabled: true, onError: "remove" },
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialMessages: messages,
         });
 
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.equal(controller.getMessages().length, 0);
+        expect(c.getSnapshot()).toMatchObject({
+            messages,
+            status: "ready",
+            pendingClientTools: [],
+            pendingToolApprovals: [],
+        });
     });
 
-    test("optimistic insertion preserves structured single-message user input", async () => {
-        const mock = createMockClient();
-        const release = deferred<void>();
-
-        mock.setRunImpl(
-            () =>
-                new Promise((resolve) => {
-                    void release.promise.then(() => resolve(createRunResult()));
-                }),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            optimisticUserMessage: true,
-        });
-
-        const pending = controller.sendMessage({
-            input: {
-                type: "message",
-                role: "user",
-                content: [
-                    { type: "text", text: "Look at this" },
-                    {
-                        type: "image",
-                        source: { kind: "url", url: "https://example.com/image.png" },
-                    },
-                ],
+    test("threaded send sends only the new input message", async () => {
+        const sentMessages: unknown[] = [];
+        const client = mockClient(async function* () {}, {
+            stream(_agentName, input) {
+                sentMessages.push((input as { messages?: unknown[] }).messages);
+                return (async function* () {})();
             },
         });
 
-        assert.deepEqual(controller.getMessages()[0], {
-            localId: controller.getMessages()[0]?.localId,
-            role: "user",
-            parts: [
-                { type: "text", text: "Look at this", state: "complete" },
-                {
-                    type: "image",
-                    source: { kind: "url", url: "https://example.com/image.png" },
-                    state: "complete",
-                },
-            ],
-            status: "pending",
-        });
-
-        release.resolve();
-        await pending;
-
-        assert.equal(controller.getMessages()[0]?.status, "sent");
-    });
-
-    test("optimistic insertion preserves a single-item user message array input", async () => {
-        const mock = createMockClient();
-        const release = deferred<void>();
-
-        mock.setRunImpl(
-            () =>
-                new Promise((resolve) => {
-                    void release.promise.then(() => resolve(createRunResult()));
-                }),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            optimisticUserMessage: true,
-        });
-
-        const pending = controller.sendMessage({
-            input: [
-                {
-                    type: "message",
-                    role: "user",
-                    content: [{ type: "text", text: "Latest user turn" }],
-                },
-            ],
-        });
-
-        assert.equal(controller.getMessages()[0]?.role, "user");
-        assert.deepEqual(controller.getMessages()[0]?.parts, [
-            { type: "text", text: "Latest user turn", state: "complete" },
-        ]);
-        assert.equal(controller.getMessages()[0]?.status, "pending");
-
-        release.resolve();
-        await pending;
-    });
-
-    test("optimistic insertion skips multi-item array input when sendClientHistory is false", async () => {
-        const mock = createMockClient();
-        const release = deferred<void>();
-
-        mock.setRunImpl(
-            () =>
-                new Promise((resolve) => {
-                    void release.promise.then(() => resolve(createRunResult()));
-                }),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            optimisticUserMessage: true,
-        });
-
-        const pending = controller.sendMessage({
-            input: [
-                {
-                    type: "message",
-                    role: "assistant",
-                    content: "Context from caller",
-                },
-                {
-                    type: "message",
-                    role: "user",
-                    content: [{ type: "text", text: "Latest user turn" }],
-                },
-            ],
-        });
-
-        assert.deepEqual(controller.getMessages(), []);
-
-        release.resolve();
-        await pending;
-    });
-
-    test("sendClientHistory preserves prompt-style single-message input when optimistic insertion is enabled", async () => {
-        const mock = createMockClient();
-
-        mock.setRunImpl(async () => createRunResult());
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            optimisticUserMessage: true,
-            initialMessages: [{ role: "user", parts: [{ type: "text", text: "Earlier" }] }],
-        });
-
-        await controller.sendMessage({
-            input: {
-                type: "message",
-                content: [{ type: "text", text: "Prompt hello" }],
-            },
-            sendClientHistory: true,
-        });
-
-        assert.deepEqual(mock.runCalls[0]?.input.input, [
-            { type: "message", role: "user", content: "Earlier" },
-            {
-                type: "message",
-                content: [{ type: "text", text: "Prompt hello" }],
-            },
-        ]);
-    });
-
-    test("sendClientHistory serializes a single structured user message without duplicating the optimistic turn", async () => {
-        const mock = createMockClient();
-
-        mock.setRunImpl(async (_agent, input) => {
-            return createRunResult({ seenInput: input });
-        });
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            optimisticUserMessage: true,
-            initialMessages: [{ role: "user", parts: [{ type: "text", text: "Earlier" }] }],
-        });
-
-        await controller.sendMessage({
-            input: {
-                type: "message",
-                role: "user",
-                content: [{ type: "text", text: "Structured hello" }],
-            },
-            sendClientHistory: true,
-        });
-
-        assert.deepEqual(mock.runCalls[0]?.input.input, [
-            { type: "message", role: "user", content: "Earlier" },
-            {
-                type: "message",
-                role: "user",
-                content: "Structured hello",
-            },
-        ]);
-    });
-
-    test("sendClientHistory skips optimistic insertion for multi-item array input", async () => {
-        const mock = createMockClient();
-        const release = deferred<void>();
-
-        mock.setRunImpl(
-            () =>
-                new Promise((resolve) => {
-                    void release.promise.then(() => resolve(createRunResult()));
-                }),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            optimisticUserMessage: true,
-            initialMessages: [{ role: "user", parts: [{ type: "text", text: "Earlier" }] }],
-        });
-
-        const pending = controller.sendMessage({
-            input: [
-                {
-                    type: "message",
-                    role: "assistant",
-                    content: "Caller context",
-                },
-                {
-                    type: "message",
-                    role: "user",
-                    content: [{ type: "text", text: "Latest user turn" }],
-                },
-            ],
-            sendClientHistory: true,
-        });
-
-        assert.deepEqual(
-            controller.getMessages().map((message) => message.parts),
-            [[{ type: "text", text: "Earlier" }]],
-        );
-
-        release.resolve();
-        await pending;
-
-        assert.deepEqual(mock.runCalls[0]?.input.input, [
-            { type: "message", role: "user", content: "Earlier" },
-            {
-                type: "message",
-                role: "assistant",
-                content: "Caller context",
-            },
-            {
-                type: "message",
-                role: "user",
-                content: [{ type: "text", text: "Latest user turn" }],
-            },
-        ]);
-    });
-
-    test("onOptimisticUserMessageError reports optimistic submission failures", async () => {
-        const mock = createMockClient();
-        let seen:
-            | {
-                  messageStatus?: string;
-                  messageError?: string;
-                  errorMessage?: string;
-              }
-            | undefined;
-
-        mock.setStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_ERROR",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                    error: { message: "Boom" },
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "stream",
-            optimisticUserMessage: { enabled: true, onError: "fail" },
-            onOptimisticUserMessageError: ({ message, error }) => {
-                seen = {
-                    messageStatus: message.status,
-                    messageError: message.error,
-                    errorMessage: error.message,
-                };
-            },
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.deepEqual(seen, {
-            messageStatus: "failed",
-            messageError: "Boom",
-            errorMessage: "Boom",
-        });
-    });
-
-    test("stop aborts in-flight stream consumption without destroying the controller", async () => {
-        const mock = createMockClient();
-        const started = deferred<void>();
-        const release = deferred<void>();
-        let aborted = false;
-        let attempts = 0;
-
-        mock.setStreamImpl((_agent, _input, options) => {
-            attempts += 1;
-            return (async function* () {
-                options?.onResponse?.(new Response(null, { status: 200 }));
-                options?.signal?.addEventListener("abort", () => {
-                    aborted = true;
-                });
-
-                if (attempts === 1) {
-                    started.resolve();
-                    await release.promise;
-                    if (options?.signal?.aborted) {
-                        throw abortError();
-                    }
-                    return;
-                }
-
-                yield {
-                    type: "RUN_FINISHED",
-                    timestamp: 2,
-                    runId: "run_1",
-                    agentName: "support",
-                    result: createRunResult(),
-                } as unknown as ClientEvent;
-            })();
-        });
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "stream",
-        });
-
-        const pending = controller.sendMessage({ input: "Hi" });
-        await started.promise;
-        controller.stop();
-        release.resolve();
-        await pending;
-
-        assert.equal(aborted, true);
-        assert.equal(controller.getStatus(), "ready");
-        assert.equal(controller.getMessages().length, 1);
-        assert.equal(controller.getMessages()[0]?.status, "sent");
-
-        await controller.sendMessage({ input: "Hello again" });
-        assert.equal(controller.getStatus(), "ready");
-        assert.equal(attempts, 2);
-    });
-
-    test("stream callbacks forward events and data parts", async () => {
-        const mock = createMockClient();
-        const seenEvents: string[] = [];
-        const seenData: Array<{ id?: string; data: unknown }> = [];
-
-        mock.setStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "DATA_PART",
-                    timestamp: 1,
-                    id: "data_1",
-                    data: { progress: 0.5 },
-                    runId: "run_1",
-                    streamId: "stream_1",
-                } as unknown as ClientEvent,
-                {
-                    type: "RUN_FINISHED",
-                    timestamp: 2,
-                    runId: "run_1",
-                    streamId: "stream_1",
-                    agentName: "support",
-                    result: createRunResult(),
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "stream",
-            onEvent: (event) => {
-                seenEvents.push(event.type);
-            },
-            onData: (part) => {
-                seenData.push(part);
-            },
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.deepEqual(seenEvents, ["DATA_PART", "RUN_FINISHED"]);
-        assert.deepEqual(seenData, [{ id: "data_1", data: { progress: 0.5 } }]);
-    });
-
-    test("onDisconnect fires when a stream ends before a terminal event", async () => {
-        const mock = createMockClient();
-        const disconnects: Array<{ error: Error; runId?: string; streamId?: string }> = [];
-        const errors: string[] = [];
-        let finishCalls = 0;
-
-        mock.setStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_STARTED",
-                    timestamp: 1,
-                    runId: "run_1",
-                    streamId: "stream_1",
-                    agentName: "support",
-                    runInput: { input: "Hi" },
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "stream",
-            onDisconnect: (info) => {
-                disconnects.push(info);
-            },
-            onError: (error) => {
-                errors.push(error.message);
-            },
-            onFinish: () => {
-                finishCalls += 1;
-            },
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.equal(controller.getStatus(), "error");
-        assert.equal(finishCalls, 0);
-        assert.deepEqual(errors, ["Stream ended before terminal run event."]);
-        assert.equal(disconnects.length, 1);
-        assert.equal(disconnects[0]?.runId, "run_1");
-        assert.equal(disconnects[0]?.streamId, "stream_1");
-        assert.equal(disconnects[0]?.error.message, "Stream ended before terminal run event.");
-    });
-
-    test("onDisconnect does not fire for streamed RUN_ERROR events", async () => {
-        const mock = createMockClient();
-        const disconnects: string[] = [];
-        const errors: string[] = [];
-
-        mock.setStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_ERROR",
-                    timestamp: 1,
-                    runId: "run_1",
-                    streamId: "stream_1",
-                    agentName: "support",
-                    error: { message: "Boom" },
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "stream",
-            onDisconnect: (info) => {
-                disconnects.push(info.error.message);
-            },
-            onError: (error) => {
-                errors.push(error.message);
-            },
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.equal(controller.getStatus(), "error");
-        assert.deepEqual(disconnects, []);
-        assert.deepEqual(errors, ["Boom"]);
-    });
-
-    test("optimisticUserMessage false disables local user insertion", async () => {
-        const mock = createMockClient();
-
-        mock.setStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_ERROR",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                    error: { message: "Boom" },
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "stream",
-            optimisticUserMessage: false,
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.equal(controller.getStatus(), "error");
-        assert.equal(controller.getMessages().length, 0);
-    });
-
-    test("seeds initial messages and exposes stable chat identity", () => {
-        const mock = createMockClient();
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            id: "chat_1",
-            conversationId: "conversation_1",
-            initialMessages: [{ role: "system", parts: [{ type: "text", text: "Be brief" }] }],
-        });
-
-        const snapshot = controller.getSnapshot();
-
-        assert.equal(snapshot.id, "chat_1");
-        assert.equal(snapshot.conversationId, "conversation_1");
-        assert.equal(snapshot.messages.length, 1);
-        assert.equal(snapshot.messages[0]?.role, "system");
-    });
-
-    test("destroy prevents future notifications and rejects new work", async () => {
-        const mock = createMockClient();
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-        });
-        let notifications = 0;
-
-        controller.subscribe(() => {
-            notifications += 1;
-        });
-
-        controller.destroy();
-        controller.setMessages([{ role: "assistant", parts: [{ type: "text", text: "Ignored" }] }]);
-
-        assert.equal(notifications, 0);
-        await assert.rejects(() => controller.sendMessage({ input: "Hi" }), /been destroyed/);
-    });
-
-    test("run-mode tool call results stay replayable in later client-history sends", async () => {
-        const mock = createMockClient();
-        const seenInputs: Array<Record<string, unknown>> = [];
-
-        mock.setRunImpl(async (_agent, input) => {
-            seenInputs.push(input);
-
-            if (seenInputs.length === 1) {
-                return createRunResult({
-                    response: {
-                        output: [
-                            {
-                                type: "tool-call",
-                                callId: "call_1",
-                                name: "searchWeb",
-                                arguments: { query: "weather" },
-                            },
-                            {
-                                type: "provider-tool-result",
-                                callId: "call_1",
-                                result: { answer: 42 },
-                            },
-                        ],
-                        finishReason: "stop",
-                        usage: {},
-                    },
-                });
-            }
-
-            return createRunResult();
-        });
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-        await controller.sendMessage({ input: "Again", sendClientHistory: true });
-
-        assert.equal(controller.getMessages()[1]?.role, "assistant");
-        assert.deepEqual(controller.getMessages()[1]?.parts, [
-            {
-                type: "tool-call",
-                callId: "call_1",
-                name: "searchWeb",
-                args: { query: "weather" },
-                status: "success",
-                state: "completed",
-            },
-            {
-                type: "tool-result",
-                callId: "call_1",
-                result: { answer: 42 },
-                status: "success",
-            },
-        ]);
-        assert.deepEqual(seenInputs[1]?.input, [
-            { type: "message", role: "user", content: "Hi" },
-            {
-                type: "tool-call",
-                callId: "call_1",
-                name: "searchWeb",
-                result: { answer: 42 },
-            },
-            { type: "message", role: "user", content: "Again" },
-        ]);
-    });
-
-    test("sendClientHistory with multimodal input serializes prior history and the new turn", async () => {
-        const mock = createMockClient();
-
-        mock.setRunImpl(async () => createRunResult());
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            conversationId: "conv_1",
-            initialMessages: [{ role: "user", parts: [{ type: "text", text: "Earlier" }] }],
-        });
-
-        await controller.sendMessage({
-            input: [
-                {
-                    type: "message",
-                    role: "user",
-                    content: [
-                        {
-                            type: "image",
-                            source: { kind: "url", url: "https://example.com/new.png" },
-                        },
-                    ],
-                },
-            ],
-            sendClientHistory: true,
-        });
-
-        assert.deepEqual(mock.runCalls[0]?.input.input, [
-            { type: "message", role: "user", content: "Earlier" },
-            {
-                type: "message",
-                role: "user",
-                content: [
-                    {
-                        type: "image",
-                        source: { kind: "url", url: "https://example.com/new.png" },
-                    },
-                ],
-            },
-        ]);
-        assert.equal(mock.runCalls[0]?.input.replaceHistory, true);
-    });
-
-    test("updateClient swaps the transport client used for future requests", async () => {
-        const first = createMockClient();
-        const second = createMockClient();
-        const controller = createAgentChatController(first.client, {
-            agent: "support",
-            delivery: "final",
-        });
-
-        controller.updateClient(second.client);
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.equal(first.runCalls.length, 0);
-        assert.equal(second.runCalls.length, 1);
-    });
-
-    test("resume calls resumeConversation on init when conversationId is set", async () => {
-        const mock = createMockClient();
-        mock.setResumeConversationImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_FINISHED",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                    result: {
-                        response: {
-                            output: [{ type: "message", role: "assistant", content: "Recovered" }],
-                            finishReason: "stop",
-                            usage: {},
-                        },
-                    },
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            conversationId: "conv_1",
-            resume: true,
-        });
-
-        controller.init();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        assert.equal(controller.getStatus(), "ready");
-        assert.equal(controller.getRunId(), "run_1");
-        assert.equal(mock.resumeConversationCalls.length, 1);
-    });
-
-    test("hydrateFromServer still resumes the conversation after loading history", async () => {
-        const mock = createMockClient();
-
-        mock.setLoadConversationImpl(async () => ({
-            items: [
-                {
-                    type: "message",
-                    role: "user",
-                    content: "Saved",
-                },
-            ],
-        }));
-        mock.setResumeConversationImpl((_agent, input) => {
-            assert.equal(input.afterSeq, undefined);
-            return toAsyncIterable([
-                {
-                    type: "RUN_FINISHED",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                    result: {
-                        response: {
-                            output: [{ type: "message", role: "assistant", content: "Recovered" }],
-                            finishReason: "stop",
-                            usage: {},
-                        },
-                    },
-                } as unknown as ClientEvent,
-            ]);
-        });
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            conversationId: "conv_1",
-            hydrateFromServer: true,
-            resume: true,
-        });
-
-        controller.init();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        assert.equal(mock.loadConversationCalls.length, 1);
-        assert.equal(mock.resumeConversationCalls.length, 1);
-        assert.equal(controller.getStatus(), "ready");
-        assert.equal(controller.getRunId(), "run_1");
-    });
-
-    test("resume with explicit streamId still starts when initial messages exist", async () => {
-        const mock = createMockClient();
-        mock.setResumeStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_FINISHED",
-                    timestamp: 1,
-                    runId: "run_1",
-                    streamId: "stream_1",
-                    agentName: "support",
-                    result: {
-                        response: {
-                            output: [{ type: "message", role: "assistant", content: "Recovered" }],
-                            finishReason: "stop",
-                            usage: {},
-                        },
-                    },
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            initialMessages: [{ role: "system", parts: [{ type: "text", text: "Seed" }] }],
-            resume: { streamId: "stream_1" },
-        });
-
-        controller.init();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        assert.equal(mock.resumeStreamCalls.length, 1);
-        assert.equal(controller.getStatus(), "ready");
-        assert.equal(controller.getRunId(), "run_1");
-    });
-
-    test("resumeStream defaults afterSeq from the target stream cursor", async () => {
-        const mock = createMockClient();
-        let callCount = 0;
-
-        mock.setResumeStreamImpl((_agent, input) => {
-            callCount += 1;
-
-            if (callCount === 1) {
-                assert.equal(input.afterSeq, -1);
-                return toAsyncIterable([
-                    {
-                        type: "RUN_FINISHED",
-                        timestamp: 1,
-                        runId: "run_1",
-                        streamId: "stream_1",
-                        __cursor: 10,
-                        agentName: "support",
-                        result: createRunResult(),
-                    } as unknown as ClientEvent,
-                ]);
-            }
-
-            return toAsyncIterable([]);
-        });
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-        });
-
-        await controller.resumeStream({ streamId: "stream_1" });
-        await controller.resumeStream({ streamId: "stream_2" });
-
-        assert.equal(mock.resumeStreamCalls[1]?.input.afterSeq, -1);
-    });
-
-    test("resumeConversation does not infer afterSeq from an unrelated prior stream cursor", async () => {
-        const mock = createMockClient();
-
-        mock.setResumeStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_FINISHED",
-                    timestamp: 1,
-                    runId: "run_1",
-                    streamId: "stream_1",
-                    __cursor: 10,
-                    agentName: "support",
-                    result: createRunResult(),
-                } as unknown as ClientEvent,
-            ]),
-        );
-        mock.setResumeConversationImpl((_agent, input) => {
-            assert.equal(input.afterSeq, undefined);
-            return toAsyncIterable([]);
-        });
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            conversationId: "conv_1",
-        });
-
-        await controller.resumeStream({ streamId: "stream_1" });
-        await controller.resumeConversation();
-
-        assert.equal(mock.resumeConversationCalls[0]?.input.afterSeq, undefined);
-    });
-
-    test("resume does not fire onFinish when no events were resumed", async () => {
-        const mock = createMockClient();
-        let finishCalls = 0;
-
-        mock.setResumeConversationImpl(() => toAsyncIterable([]));
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            conversationId: "conv_1",
-            resume: true,
-            onFinish: () => {
-                finishCalls += 1;
-            },
-        });
-
-        controller.init();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        assert.equal(finishCalls, 0);
-        assert.equal(controller.getStatus(), "ready");
-    });
-
-    test("resumeStream reports aborted terminal events as aborts", async () => {
-        const mock = createMockClient();
-        const finishCalls: Array<{ isAbort: boolean; streamId?: string }> = [];
-
-        mock.setResumeStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_ABORTED",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            onFinish: (params) => {
-                finishCalls.push({
-                    isAbort: params.isAbort,
-                    streamId: params.streamId,
-                });
-            },
-        });
-
-        await controller.resumeStream({ streamId: "stream_1" });
-
-        assert.equal(controller.getStatus(), "ready");
-        assert.deepEqual(finishCalls, [{ isAbort: true, streamId: "stream_1" }]);
-    });
-
-    test("resumeConversation surfaces replayed RUN_ERROR events", async () => {
-        const mock = createMockClient();
-        const seenErrors: string[] = [];
-        let finishCalls = 0;
-
-        mock.setResumeConversationImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_ERROR",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                    error: { message: "Replay failed" },
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            conversationId: "conv_1",
-            onError: (error) => {
-                seenErrors.push(error.message);
-            },
-            onFinish: () => {
-                finishCalls += 1;
-            },
-        });
-
-        await controller.resumeConversation();
-
-        assert.equal(controller.getStatus(), "error");
-        assert.equal(controller.getError()?.message, "Replay failed");
-        assert.deepEqual(seenErrors, ["Replay failed"]);
-        assert.equal(finishCalls, 0);
-    });
-
-    test("resumeStream fires onDisconnect for transport failures", async () => {
-        const mock = createMockClient();
-        const disconnects: string[] = [];
-        const errors: string[] = [];
-
-        mock.setResumeStreamImpl(
-            () =>
-                ({
-                    [Symbol.asyncIterator]() {
-                        return {
-                            async next() {
-                                throw new Error("socket closed");
-                            },
-                        };
-                    },
-                }) as AsyncIterable<ClientEvent>,
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            onDisconnect: (info) => {
-                disconnects.push(info.error.message);
-            },
-            onError: (error) => {
-                errors.push(error.message);
-            },
-        });
-
-        await controller.resumeStream({ streamId: "stream_1" });
-
-        assert.equal(controller.getStatus(), "error");
-        assert.deepEqual(disconnects, ["socket closed"]);
-        assert.deepEqual(errors, ["socket closed"]);
-    });
-
-    test("resumeConversation reconstructs the current user turn from replayed RUN_STARTED", async () => {
-        const mock = createMockClient();
-
-        mock.setResumeConversationImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_STARTED",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                    conversationId: "conv_1",
-                    runInput: { input: "What changed?" },
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_START",
-                    timestamp: 2,
-                    messageId: "assistant_1",
-                    role: "assistant",
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_CONTENT",
-                    timestamp: 3,
-                    messageId: "assistant_1",
-                    delta: "Here is the update.",
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_END",
-                    timestamp: 4,
-                    messageId: "assistant_1",
-                } as unknown as ClientEvent,
-                {
-                    type: "RUN_FINISHED",
-                    timestamp: 5,
-                    runId: "run_1",
-                    agentName: "support",
-                    conversationId: "conv_1",
-                    result: createRunResult(),
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            conversationId: "conv_1",
-        });
-
-        await controller.resumeConversation();
-
-        assert.deepEqual(
-            controller.getMessages().map((message) => ({
-                role: message.role,
-                status: message.status,
-                parts: message.parts,
-            })),
-            [
-                {
-                    role: "user",
-                    status: "sent",
-                    parts: [{ type: "text", text: "What changed?", state: "complete" }],
-                },
-                {
-                    role: "assistant",
-                    status: undefined,
-                    parts: [{ type: "text", text: "Here is the update.", state: "complete" }],
-                },
-            ],
-        );
-    });
-
-    test("resumeConversation reconstructs the current user turn from a single structured message input", async () => {
-        const mock = createMockClient();
-
-        mock.setResumeConversationImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_STARTED",
-                    timestamp: 1,
-                    runId: "run_structured",
-                    agentName: "support",
-                    conversationId: "conv_1",
-                    runInput: {
-                        input: {
-                            type: "message",
-                            role: "user",
-                            content: [{ type: "text", text: "Structured hello" }],
-                        },
-                    },
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_START",
-                    timestamp: 2,
-                    messageId: "assistant_1",
-                    role: "assistant",
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_CONTENT",
-                    timestamp: 3,
-                    messageId: "assistant_1",
-                    delta: "Structured reply",
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_END",
-                    timestamp: 4,
-                    messageId: "assistant_1",
-                } as unknown as ClientEvent,
-                {
-                    type: "RUN_FINISHED",
-                    timestamp: 5,
-                    runId: "run_structured",
-                    agentName: "support",
-                    conversationId: "conv_1",
-                    result: createRunResult(),
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            conversationId: "conv_1",
-        });
-
-        await controller.resumeConversation();
-
-        assert.equal(controller.getMessages()[0]?.role, "user");
-        assert.deepEqual(controller.getMessages()[0]?.parts, [
-            { type: "text", text: "Structured hello", state: "complete" },
-        ]);
-        assert.equal(controller.getMessages()[1]?.role, "assistant");
-    });
-
-    test("hydrate + resume does not duplicate the current user turn when it is already present", async () => {
-        const mock = createMockClient();
-
-        mock.setLoadConversationImpl(async () => ({
-            items: [
-                {
-                    type: "message",
-                    role: "user",
-                    content: "What changed?",
-                },
-            ],
-        }));
-        mock.setResumeConversationImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_STARTED",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                    conversationId: "conv_1",
-                    runInput: { input: "What changed?" },
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_START",
-                    timestamp: 2,
-                    messageId: "assistant_1",
-                    role: "assistant",
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_CONTENT",
-                    timestamp: 3,
-                    messageId: "assistant_1",
-                    delta: "Here is the update.",
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_END",
-                    timestamp: 4,
-                    messageId: "assistant_1",
-                } as unknown as ClientEvent,
-                {
-                    type: "RUN_FINISHED",
-                    timestamp: 5,
-                    runId: "run_1",
-                    agentName: "support",
-                    conversationId: "conv_1",
-                    result: createRunResult(),
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            conversationId: "conv_1",
-            hydrateFromServer: true,
-            resume: true,
-        });
-
-        controller.init();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        assert.equal(
-            controller.getMessages().filter((message) => message.role === "user").length,
-            1,
-        );
-        assert.equal(controller.getMessages()[0]?.role, "user");
-        assert.equal(controller.getMessages()[1]?.role, "assistant");
-    });
-
-    test("hydrate + resume does not duplicate the current multimodal user turn when it is already present", async () => {
-        const mock = createMockClient();
-
-        mock.setLoadConversationImpl(async () => ({
-            items: [
-                {
-                    type: "message",
-                    role: "user",
-                    content: [
-                        { type: "text", text: "What changed in this image?" },
-                        {
-                            type: "image",
-                            source: { kind: "url", url: "https://example.com/before.png" },
-                        },
-                    ],
-                },
-            ],
-        }));
-        mock.setResumeConversationImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_STARTED",
-                    timestamp: 1,
-                    runId: "run_multimodal",
-                    agentName: "support",
-                    conversationId: "conv_1",
-                    runInput: {
-                        input: [
-                            {
-                                type: "message",
-                                role: "user",
-                                content: [
-                                    { type: "text", text: "What changed in this image?" },
-                                    {
-                                        type: "image",
-                                        source: {
-                                            kind: "url",
-                                            url: "https://example.com/before.png",
-                                        },
-                                    },
-                                ],
-                            },
-                        ],
-                    },
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_START",
-                    timestamp: 2,
-                    messageId: "assistant_1",
-                    role: "assistant",
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_CONTENT",
-                    timestamp: 3,
-                    messageId: "assistant_1",
-                    delta: "The chart has a new highlighted series.",
-                } as unknown as ClientEvent,
-                {
-                    type: "TEXT_MESSAGE_END",
-                    timestamp: 4,
-                    messageId: "assistant_1",
-                } as unknown as ClientEvent,
-                {
-                    type: "RUN_FINISHED",
-                    timestamp: 5,
-                    runId: "run_multimodal",
-                    agentName: "support",
-                    conversationId: "conv_1",
-                    result: createRunResult(),
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            conversationId: "conv_1",
-            hydrateFromServer: true,
-            resume: true,
-        });
-
-        controller.init();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        assert.equal(
-            controller.getMessages().filter((message) => message.role === "user").length,
-            1,
-        );
-        assert.equal(controller.getMessages()[0]?.role, "user");
-        assert.equal(controller.getMessages()[0]?.parts[0]?.type, "text");
-        assert.equal(controller.getMessages()[0]?.parts[1]?.type, "image");
-        assert.equal(controller.getMessages()[1]?.role, "assistant");
-    });
-
-    test("resumeConversation keeps replay-synthesized user messages out of a pending ghost state on abort", async () => {
-        const mock = createMockClient();
-
-        mock.setResumeConversationImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_STARTED",
-                    timestamp: 1,
-                    runId: "run_abort",
-                    agentName: "support",
-                    conversationId: "conv_1",
-                    runInput: { input: "Stop here" },
-                } as unknown as ClientEvent,
-                {
-                    type: "RUN_ABORTED",
-                    timestamp: 2,
-                    runId: "run_abort",
-                    agentName: "support",
-                    conversationId: "conv_1",
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            conversationId: "conv_1",
-        });
-
-        await controller.resumeConversation();
-
-        assert.equal(controller.getStatus(), "ready");
-        assert.deepEqual(controller.getMessages(), [
-            {
-                localId: "user_run:run_abort",
-                id: "user_run:run_abort",
-                role: "user",
-                parts: [{ type: "text", text: "Stop here", state: "complete" }],
-                status: "sent",
-            },
-        ]);
-    });
-
-    test("delivery auto falls back to run without duplicating the optimistic user message", async () => {
-        const mock = createMockClient();
-
-        mock.setStreamImpl(() => {
-            throw new Error("Streaming is not supported by this model.");
-        });
-        mock.setRunImpl(async () => createRunResult());
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "auto",
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.equal(mock.streamCalls.length, 1);
-        assert.equal(mock.runCalls.length, 1);
-        assert.equal(
-            controller.getMessages().filter((message) => message.role === "user").length,
-            1,
-        );
-        assert.equal(controller.getMessages()[0]?.status, "sent");
-    });
-
-    test("delivery auto falls back to run when streaming is not supported", async () => {
-        const mock = createMockClient();
-
-        mock.setStreamImpl(() => {
-            throw new Error("Streaming is not supported by this model.");
-        });
-        mock.setRunImpl(async () => createRunResult());
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "auto",
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.equal(mock.streamCalls.length, 1);
-        assert.equal(mock.runCalls.length, 1);
-        assert.equal(controller.getStatus(), "ready");
-        assert.equal(controller.getError(), undefined);
-    });
-
-    test("final delivery calls run directly", async () => {
-        const mock = createMockClient();
-        mock.setRunImpl(async () => createRunResult());
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-
-        assert.equal(mock.runCalls.length, 1);
-        assert.equal(controller.getStatus(), "ready");
-        assert.equal(controller.getError(), undefined);
-    });
-
-    test("reset clears controller state back to initial snapshot", async () => {
-        const mock = createMockClient();
-        mock.setRunImpl(async () =>
-            createRunResult({
-                runId: "run_1",
-                response: {
-                    output: [],
-                    finishReason: "stop",
-                    usage: {},
-                },
-            }),
-        );
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            initialMessages: [{ role: "system", parts: [{ type: "text", text: "Be brief" }] }],
-        });
-
-        await controller.sendMessage({ input: "Hi" });
-        controller.setMessages((messages) => [
-            ...messages,
-            {
-                role: "assistant",
-                parts: [{ type: "text", text: "Hello" }],
-            },
-        ]);
-        assert.ok(controller.getMessages().length > 1);
-
-        controller.reset();
-
-        assert.equal(controller.getStatus(), "ready");
-        assert.equal(controller.getRunId(), undefined);
-        assert.equal(controller.getError(), undefined);
-        assert.equal(controller.getMessages().length, 1);
-        assert.equal(controller.getMessages()[0]?.role, "system");
-    });
-
-    test("retry truncates stale trailing messages and marks replaceHistory for conversation sends", async () => {
-        const mock = createMockClient();
-        let seenInput: Record<string, unknown> | undefined;
-
-        mock.setRunImpl(async (_agent, input) => {
-            seenInput = input;
-            return createRunResult();
-        });
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            conversationId: "conv_1",
-            initialMessages: [
-                { localId: "u_1", role: "user", parts: [{ type: "text", text: "First" }] },
-                { localId: "a_1", role: "assistant", parts: [{ type: "text", text: "Reply" }] },
-                { localId: "u_2", role: "user", parts: [{ type: "text", text: "Second" }] },
-                { localId: "a_2", role: "assistant", parts: [{ type: "text", text: "Stale" }] },
-            ],
-        });
-
-        await controller.retryMessage("u_1");
-
-        assert.equal(controller.getMessages().length, 1);
-        assert.equal(controller.getMessages()[0]?.localId, "u_1");
-        assert.equal(seenInput?.replaceHistory, true);
-        assert.deepEqual(seenInput?.input, [{ type: "message", role: "user", content: "First" }]);
-    });
-
-    test("retry preserves multimodal user turns", async () => {
-        const mock = createMockClient();
-
-        mock.setRunImpl(async (_agent, _input) => createRunResult());
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            conversationId: "conv_1",
+        const c = createAgentController(client.agent("assistant" as never), {
+            threadId: "thread_1",
             initialMessages: [
                 {
-                    localId: "u_1",
-                    role: "user",
+                    id: "assistant_1",
+                    role: "assistant",
                     parts: [
                         {
-                            type: "image",
-                            source: { kind: "url", url: "https://example.com/source.png" },
+                            type: "tool-result",
+                            toolCallId: "tool_1",
+                            state: "output-available",
+                            result: "Sunny",
                         },
                     ],
                 },
-                { localId: "a_1", role: "assistant", parts: [{ type: "text", text: "Reply" }] },
-                { localId: "a_2", role: "assistant", parts: [{ type: "text", text: "Stale" }] },
             ],
         });
 
-        await controller.retryMessage("u_1");
+        await c.sendMessage("next");
 
-        assert.equal(controller.getMessages().length, 1);
-        assert.deepEqual(mock.runCalls[0]?.input.input, [
+        expect(sentMessages).toHaveLength(1);
+        expect(sentMessages[0]).toEqual([
             {
-                type: "message",
                 role: "user",
-                content: [
+                content: "next",
+            },
+        ]);
+    });
+
+    test("provider-executed tool parts survive a later messages snapshot", async () => {
+        const client = mockClient(async function* () {
+            yield {
+                type: EventType.MESSAGES_SNAPSHOT,
+                timestamp: Date.now(),
+                messages: [
                     {
-                        type: "image",
-                        source: { kind: "url", url: "https://example.com/source.png" },
+                        id: "assistant_1",
+                        role: "assistant",
+                        content: "Here are the latest headlines.",
+                        toolCalls: [
+                            {
+                                id: "tool_1",
+                                type: "function",
+                                function: {
+                                    name: "web_search",
+                                    arguments:
+                                        '{"action":{"type":"search","query":"latest US news"}}',
+                                },
+                                providerExecuted: true,
+                            },
+                        ],
+                        sources: [
+                            {
+                                id: "source_1",
+                                sourceType: "url",
+                                url: "https://example.com/news",
+                                title: "Example News",
+                            },
+                        ],
+                    },
+                    {
+                        id: "tool_1_result",
+                        role: "tool",
+                        toolCallId: "tool_1",
+                        content: '{"action":{"type":"search","query":"latest US news"}}',
+                        status: "success",
+                    },
+                ],
+            } as AgentEvent;
+        });
+
+        const c = createAgentController(client.agent("assistant" as never), {});
+
+        await c.sendMessage("latest US news");
+
+        expect(c.getSnapshot().messages.at(-1)).toMatchObject({
+            id: "assistant_1",
+            role: "assistant",
+            parts: [
+                { type: "text", text: "Here are the latest headlines." },
+                {
+                    type: "tool-call",
+                    toolCallId: "tool_1",
+                    toolName: "web_search",
+                    input: { action: { type: "search", query: "latest US news" } },
+                    inputText: '{"action":{"type":"search","query":"latest US news"}}',
+                    state: "input-available",
+                    providerExecuted: true,
+                },
+                {
+                    type: "tool-result",
+                    toolCallId: "tool_1",
+                    state: "output-available",
+                    result: { action: { type: "search", query: "latest US news" } },
+                },
+                {
+                    type: "source",
+                    sourceId: "source_1",
+                    sourceType: "url",
+                    url: "https://example.com/news",
+                    title: "Example News",
+                },
+            ],
+        });
+    });
+
+    test("interruptState restores pending approval and marks the tool call", () => {
+        const client = mockClient(async function* () {
+            /* no events */
+        });
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialMessages: [messageWithToolCall()],
+            initialInterruptState: {
+                runId: "run_1",
+                pendingToolApprovals: [
+                    {
+                        interruptId: "tool_1:approval",
+                        runId: "run_1",
+                        toolCallId: "tool_1",
+                        toolName: "deleteFile",
+                        input: { path: "/tmp/x" },
+                    },
+                ],
+            },
+        });
+
+        const snapshot = c.getSnapshot();
+        expect(snapshot.status).toBe("interrupted");
+        expect(snapshot.runId).toBe("run_1");
+        expect(snapshot.pendingToolApprovals).toEqual([
+            {
+                interruptId: "tool_1:approval",
+                runId: "run_1",
+                toolCallId: "tool_1",
+                toolName: "deleteFile",
+                input: { path: "/tmp/x" },
+            },
+        ]);
+        expect(snapshot.messages[0]?.parts[0]).toMatchObject({
+            type: "tool-call",
+            toolCallId: "tool_1",
+            state: "approval-requested",
+            approval: {
+                interruptId: "tool_1:approval",
+                needsApproval: true,
+            },
+        });
+    });
+
+    test("interruptState restores pending client tools when no handler is registered", async () => {
+        let resolveFinish: (finish: AgentControllerFinish) => void = () => {};
+        const finished = new Promise<AgentControllerFinish>((resolve) => {
+            resolveFinish = resolve;
+        });
+        const client = mockClient(async function* () {
+            /* no events */
+        });
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialInterruptState: {
+                runId: "run_1",
+                pendingClientTools: [
+                    {
+                        interruptId: "client_tool_1",
+                        runId: "run_1",
+                        toolCallId: "tool_1",
+                        toolName: "getLocation",
+                        input: { precise: true },
+                    },
+                ],
+            },
+            onFinish: resolveFinish,
+        });
+        c.start();
+
+        const finish = await finished;
+        expect(finish).toMatchObject({
+            isInterrupted: true,
+            interruptReason: "client_tool_pending",
+        });
+        expect(c.getSnapshot()).toMatchObject({
+            status: "interrupted",
+            runId: "run_1",
+            pendingClientTools: [
+                {
+                    interruptId: "client_tool_1",
+                    runId: "run_1",
+                    toolCallId: "tool_1",
+                    toolName: "getLocation",
+                    input: { precise: true },
+                },
+            ],
+            pendingToolApprovals: [],
+        });
+    });
+
+    test("interruptState executes pending client tools when a handler is registered", async () => {
+        const resumeCalls: unknown[] = [];
+        let resolveFinish: (finish: AgentControllerFinish) => void = () => {};
+        const finished = new Promise<AgentControllerFinish>((resolve) => {
+            resolveFinish = resolve;
+        });
+        const client = mockClient(
+            async function* () {
+                /* no events */
+            },
+            {
+                stream(_agentName, input): AsyncIterable<AgentEvent> {
+                    resumeCalls.push(input);
+                    return assistantTextStream("Located");
+                },
+            },
+        );
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialInterruptState: {
+                runId: "run_1",
+                pendingClientTools: [
+                    {
+                        interruptId: "client_tool_1",
+                        runId: "run_1",
+                        toolCallId: "tool_1",
+                        toolName: "getLocation",
+                        input: { precise: true },
+                    },
+                ],
+            },
+            toolHandlers: {
+                getLocation: () => ({ lat: 1, lng: 2 }),
+            },
+            onFinish: resolveFinish,
+        });
+        c.start();
+
+        expect(c.getSnapshot().status).toBe("streaming");
+        const finish = await finished;
+
+        expect(resumeCalls).toEqual([
+            {
+                resume: [
+                    {
+                        interruptId: "client_tool_1",
+                        status: "resolved",
+                        payload: { status: "success", result: { lat: 1, lng: 2 } },
                     },
                 ],
             },
         ]);
-        assert.equal(mock.runCalls[0]?.input.replaceHistory, true);
-    });
-
-    test("hydrates from the server and updates reset baseline", async () => {
-        const mock = createMockClient();
-        mock.setLoadConversationImpl(async () => ({
-            items: [{ type: "message", role: "user", content: "Stored hello" }],
-        }));
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            conversationId: "conv_1",
-            hydrateFromServer: true,
-            initialMessages: [{ role: "system", parts: [{ type: "text", text: "Fallback" }] }],
-        });
-
-        controller.init();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        const hydratedFirstPart = controller.getMessages()[0]?.parts[0];
-        assert.equal(mock.loadConversationCalls.length, 1);
-        assert.equal(hydratedFirstPart?.type, "text");
-        assert.equal(
-            hydratedFirstPart?.type === "text" ? hydratedFirstPart.text : "",
-            "Stored hello",
-        );
-
-        controller.setMessages([{ role: "assistant", parts: [{ type: "text", text: "Changed" }] }]);
-        controller.reset();
-        const resetFirstPart = controller.getMessages()[0]?.parts[0];
-        assert.equal(resetFirstPart?.type, "text");
-        assert.equal(resetFirstPart?.type === "text" ? resetFirstPart.text : "", "Stored hello");
-    });
-
-    test("hydrateFromServer uses a dedicated hydrating status", async () => {
-        const mock = createMockClient();
-        const statuses: string[] = [];
-        mock.setLoadConversationImpl(async () => ({
-            items: [{ type: "message", role: "user", content: "Stored hello" }],
-        }));
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            conversationId: "conv_1",
-            hydrateFromServer: true,
-        });
-
-        controller.subscribe(() => {
-            statuses.push(controller.getStatus());
-        });
-
-        controller.init();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        assert.equal(controller.getStatus(), "ready");
-        assert.equal(statuses.includes("hydrating"), true);
-        assert.equal(statuses.includes("submitted"), false);
-    });
-
-    test("hydrates durable items with media and tool history", async () => {
-        const mock = createMockClient();
-        mock.setLoadConversationImpl(async () => ({
-            items: [
+        expect(finish.isInterrupted).toBe(false);
+        expect(c.getSnapshot()).toMatchObject({
+            status: "ready",
+            pendingClientTools: [],
+            messages: [
                 {
-                    type: "message",
+                    id: "assistant_1",
                     role: "assistant",
-                    content: [
-                        { type: "text", text: "Stored answer" },
+                    parts: [{ type: "text", text: "Located" }],
+                },
+            ],
+        });
+    });
+
+    test("threadId hydrates latest interrupted run metadata", async () => {
+        const client = mockClient(
+            async function* () {
+                /* no events */
+            },
+            {
+                memory: {
+                    messages: [
                         {
-                            type: "image",
-                            source: { kind: "url", url: "https://example.com/answer.png" },
+                            id: "assistant_1",
+                            role: "assistant",
+                            content: "",
+                            toolCalls: [
+                                {
+                                    id: "tool_1",
+                                    type: "function",
+                                    function: {
+                                        name: "deleteFile",
+                                        arguments: '{"path":"/tmp/x"}',
+                                    },
+                                },
+                            ],
+                            threadId: "thread_1",
+                            runId: "run_1",
+                            createdAt: 1,
                         },
                     ],
+                    runtime: {
+                        interrupted: {
+                            runId: "run_1",
+                            interrupts: [
+                                {
+                                    id: "tool_1:approval",
+                                    reason: "tool_approval_pending",
+                                    toolCallId: "tool_1",
+                                },
+                            ],
+                        },
+                    },
                 },
-                {
-                    type: "tool-call",
-                    callId: "call_1",
-                    name: "searchDocs",
-                    arguments: '{"query":"stored"}',
-                },
-                {
-                    type: "tool-call",
-                    callId: "call_1",
-                    name: "searchDocs",
-                    result: { answer: "stored" },
-                },
-            ],
-        }));
+            },
+        );
 
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            conversationId: "conv_1",
-            hydrateFromServer: true,
+        const c = createAgentController(client.agent("assistant" as never), {
+            threadId: "thread_1",
         });
-
-        controller.init();
+        c.start();
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        // The refactored fromConversationItems groups tool-call items into the
-        // preceding assistant message, so text+image+tool all live in one message.
-        assert.equal(controller.getMessages().length, 1);
-        assert.equal(controller.getMessages()[0]?.parts[1]?.type, "image");
-        assert.deepEqual(controller.getMessages()[0]?.parts.slice(2), [
-            {
-                type: "tool-call",
-                callId: "call_1",
-                name: "searchDocs",
-                args: '{"query":"stored"}',
-                status: "success",
-                state: "completed",
+        expect(c.getSnapshot()).toMatchObject({
+            status: "interrupted",
+            runId: "run_1",
+            pendingToolApprovals: [
+                {
+                    interruptId: "tool_1:approval",
+                    runId: "run_1",
+                    toolCallId: "tool_1",
+                    toolName: "deleteFile",
+                    input: { path: "/tmp/x" },
+                },
+            ],
+        });
+        expect(
+            c
+                .getSnapshot()
+                .messages.flatMap((message) => message.parts)
+                .find((part) => part.type === "tool-call" && part.toolCallId === "tool_1"),
+        ).toMatchObject({
+            type: "tool-call",
+            state: "approval-requested",
+        });
+    });
+
+    test("threadId resumable runtime loads prior messages and replays from zero", async () => {
+        const listInputs: unknown[] = [];
+        const replayCalls: unknown[] = [];
+        let resolveFinish: (finish: AgentControllerFinish) => void = () => {};
+        const finished = new Promise<AgentControllerFinish>((resolve) => {
+            resolveFinish = resolve;
+        });
+        const client = mockClient(
+            async function* () {
+                /* no events */
             },
             {
-                type: "tool-result",
-                callId: "call_1",
-                result: { answer: "stored" },
-                status: "success",
+                resumeStream(input) {
+                    replayCalls.push(input);
+                    return assistantTextStream("Replayed");
+                },
+                memory: {
+                    runtime: {
+                        resumable: {
+                            runId: "run_1",
+                            afterSequence: 0,
+                        },
+                    },
+                    listMessages: (_threadId, input) => {
+                        listInputs.push(input);
+                        return [
+                            {
+                                id: "user_old",
+                                role: "user",
+                                content: "old",
+                                threadId: "thread_1",
+                                runId: "run_0",
+                                createdAt: 1,
+                            },
+                        ];
+                    },
+                },
+            },
+        );
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            threadId: "thread_1",
+            onFinish: resolveFinish,
+        });
+        c.start();
+        const finish = await finished;
+
+        expect(listInputs).toEqual([{ beforeRunId: "run_1" }]);
+        expect(replayCalls).toEqual([{ runId: "run_1", afterSequence: 0 }]);
+        expect(finish.isInterrupted).toBe(false);
+        expect(c.getSnapshot().messages).toMatchObject([
+            {
+                id: "user_old",
+                role: "user",
+                parts: [{ type: "text", text: "old" }],
+            },
+            {
+                id: "assistant_1",
+                role: "assistant",
+                parts: [{ type: "text", text: "Replayed" }],
             },
         ]);
     });
 
-    test("session-changing option updates reset and rehydrate the controller", async () => {
-        const mock = createMockClient();
-        mock.setLoadConversationImpl(async (_agent, conversationId) => ({
-            items: [
+    test("client tool handler returning undefined resumes as an empty success result", async () => {
+        const resumeCalls: unknown[] = [];
+        let resolveFinish: (finish: AgentControllerFinish) => void = () => {};
+        const finished = new Promise<AgentControllerFinish>((resolve) => {
+            resolveFinish = resolve;
+        });
+        const client = mockClient(
+            async function* () {
+                /* no events */
+            },
+            {
+                stream(_agentName, input): AsyncIterable<AgentEvent> {
+                    resumeCalls.push(input);
+                    return (async function* () {})();
+                },
+            },
+        );
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialInterruptState: {
+                runId: "run_1",
+                pendingClientTools: [
+                    {
+                        interruptId: "client_tool_1",
+                        runId: "run_1",
+                        toolCallId: "tool_1",
+                        toolName: "getLocation",
+                        input: { precise: true },
+                    },
+                ],
+            },
+            toolHandlers: {
+                getLocation: () => undefined,
+            },
+            onFinish: resolveFinish,
+        });
+        c.start();
+
+        const finish = await finished;
+
+        expect(resumeCalls).toEqual([
+            {
+                resume: [
+                    {
+                        interruptId: "client_tool_1",
+                        status: "resolved",
+                        payload: { status: "success", result: {} },
+                    },
+                ],
+            },
+        ]);
+        expect(finish.isInterrupted).toBe(false);
+    });
+
+    test("client tool handler errors resume as an error result", async () => {
+        const resumeCalls: unknown[] = [];
+        let resolveFinish: (finish: AgentControllerFinish) => void = () => {};
+        const finished = new Promise<AgentControllerFinish>((resolve) => {
+            resolveFinish = resolve;
+        });
+        const client = mockClient(
+            async function* () {
+                /* no events */
+            },
+            {
+                stream(_agentName, input): AsyncIterable<AgentEvent> {
+                    resumeCalls.push(input);
+                    return (async function* () {})();
+                },
+            },
+        );
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialMessages: [messageWithToolCall()],
+            initialInterruptState: {
+                runId: "run_1",
+                pendingClientTools: [
+                    {
+                        interruptId: "client_tool_1",
+                        runId: "run_1",
+                        toolCallId: "tool_1",
+                        toolName: "deleteFile",
+                        input: { path: "/tmp/x" },
+                    },
+                ],
+            },
+            toolHandlers: {
+                deleteFile: () => {
+                    throw new Error("No permission");
+                },
+            },
+            onFinish: resolveFinish,
+        });
+        c.start();
+
+        const finish = await finished;
+
+        expect(resumeCalls).toEqual([
+            {
+                resume: [
+                    {
+                        interruptId: "client_tool_1",
+                        status: "resolved",
+                        payload: { status: "error", error: "No permission" },
+                    },
+                ],
+            },
+        ]);
+        expect(
+            c
+                .getSnapshot()
+                .messages.flatMap((message) => message.parts)
+                .find((part) => part.type === "tool-result" && part.toolCallId === "tool_1"),
+        ).toMatchObject({
+            type: "tool-result",
+            state: "output-error",
+            error: "No permission",
+        });
+        expect(finish.isInterrupted).toBe(false);
+    });
+
+    test("state initializes the snapshot", () => {
+        const client = mockClient(async function* () {
+            /* no events */
+        });
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            threadId: "thread_1",
+            initialState: {
+                selectedItemId: "sku_1",
+            },
+        });
+
+        expect(c.getSnapshot()).toMatchObject({
+            state: {
+                selectedItemId: "sku_1",
+            },
+            status: "ready",
+        });
+    });
+
+    test("STATE_SNAPSHOT replaces state during streaming", async () => {
+        const client = mockClient(async function* () {
+            yield {
+                type: EventType.STATE_SNAPSHOT,
+                timestamp: Date.now(),
+                snapshot: { status: "working", count: 1 },
+            } as AgentEvent;
+        });
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialState: { status: "idle" },
+        });
+
+        await c.sendMessage("hello");
+
+        expect(c.getSnapshot().state).toEqual({ status: "working", count: 1 });
+    });
+
+    test("STATE_DELTA patches state during streaming", async () => {
+        const client = mockClient(async function* () {
+            yield {
+                type: EventType.STATE_DELTA,
+                timestamp: Date.now(),
+                delta: [{ op: "replace", path: "/status", value: "done" }],
+            } as AgentEvent;
+        });
+        const c = createAgentController(client.agent("assistant" as never), {
+            initialState: { status: "idle" },
+        });
+
+        await c.sendMessage("hello");
+
+        expect(c.getSnapshot().state).toEqual({ status: "done" });
+    });
+
+    test("resume replays stream events from the requested run", async () => {
+        const replayCalls: unknown[] = [];
+        let resolveFinish: (finish: AgentControllerFinish) => void = () => {};
+        const finished = new Promise<AgentControllerFinish>((resolve) => {
+            resolveFinish = resolve;
+        });
+        const client = mockClient(
+            async function* () {
+                /* no events */
+            },
+            {
+                resumeStream(input) {
+                    replayCalls.push(input);
+                    return (async function* () {
+                        yield runStartedEvent("run_1", [
+                            { id: "server_user_1", role: "user", content: "hello" },
+                        ]);
+                        yield {
+                            type: EventType.TEXT_MESSAGE_CONTENT,
+                            timestamp: Date.now(),
+                            messageId: "assistant_1",
+                            delta: "Replayed",
+                            seq: 43,
+                        } as AgentEvent;
+                    })();
+                },
+            },
+        );
+
+        const c = createAgentController(client.agent("assistant" as never), {
+            resume: {
+                runId: "run_1",
+                afterSequence: 42,
+            },
+            onFinish: resolveFinish,
+        });
+        c.start();
+
+        expect(c.getSnapshot().status).toBe("streaming");
+        const finish = await finished;
+
+        expect(replayCalls).toEqual([{ runId: "run_1", afterSequence: 42 }]);
+        expect(finish).toMatchObject({
+            isAbort: false,
+            isError: false,
+            isInterrupted: false,
+            runId: "run_1",
+        });
+        expect(c.getSnapshot()).toMatchObject({
+            status: "ready",
+            runId: "run_1",
+            messages: [
                 {
-                    type: "message",
+                    id: "server_user_1",
                     role: "user",
-                    content: conversationId === "conv_1" ? "Stored one" : "Stored two",
+                    parts: [{ type: "text", text: "hello" }],
+                },
+                {
+                    id: "assistant_1",
+                    role: "assistant",
+                    parts: [{ type: "text", text: "Replayed" }],
                 },
             ],
-        }));
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            conversationId: "conv_1",
-            hydrateFromServer: true,
         });
-
-        controller.init();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        const firstHydratedPart = controller.getMessages()[0]?.parts[0];
-        assert.equal(
-            firstHydratedPart?.type === "text" ? firstHydratedPart.text : "",
-            "Stored one",
-        );
-
-        controller.updateOptions({ conversationId: "conv_2" });
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        assert.deepEqual(
-            mock.loadConversationCalls.map((call) => call.conversationId),
-            ["conv_1", "conv_2"],
-        );
-        const secondHydratedPart = controller.getMessages()[0]?.parts[0];
-        assert.equal(
-            secondHydratedPart?.type === "text" ? secondHydratedPart.text : "",
-            "Stored two",
-        );
-        assert.equal(controller.getSnapshot().conversationId, "conv_2");
     });
 
-    test("non-session option updates do not reset local message state", async () => {
-        const mock = createMockClient();
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            initialMessages: [{ role: "user", parts: [{ type: "text", text: "Hi" }] }],
-        });
-
-        controller.setMessages((messages) => [
-            ...messages,
-            { role: "assistant", parts: [{ type: "text", text: "Hello" }] },
-        ]);
-        controller.updateOptions({
-            onError: () => undefined,
-            modelOptions: { reasoningEffort: "high" } as Record<string, unknown>,
-        });
-
-        assert.equal(controller.getMessages().length, 2);
-        assert.equal(controller.getMessages()[1]?.role, "assistant");
-    });
-
-    test("hydration failure is non-fatal", async () => {
-        const mock = createMockClient();
-        const seenErrors: string[] = [];
-        mock.setLoadConversationImpl(async () => {
-            throw new Error("hydrate failed");
-        });
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            conversationId: "conv_1",
-            hydrateFromServer: true,
-            initialMessages: [{ role: "system", parts: [{ type: "text", text: "Fallback" }] }],
-            onError: (error) => seenErrors.push(error.message),
-        });
-
-        controller.init();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        assert.equal(controller.getStatus(), "ready");
-        assert.equal(controller.getMessages()[0]?.role, "system");
-        assert.deepEqual(seenErrors, ["hydrate failed"]);
-    });
-
-    test("hydration aborted by sendMessage does not trigger resume", async () => {
-        const mock = createMockClient();
-        const gate = deferred<{ items: Array<Record<string, unknown>> } | null>();
-
-        mock.setLoadConversationImpl(
-            async (_agent, _conversationId, options) =>
-                await new Promise((resolve, reject) => {
-                    options?.signal?.addEventListener("abort", () => reject(abortError()), {
-                        once: true,
-                    });
-                    void gate.promise.then(resolve, reject);
-                }),
-        );
-        mock.setRunImpl(async () => createRunResult());
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            conversationId: "conv_1",
-            hydrateFromServer: true,
-            resume: { streamId: "stream_1" },
-        });
-
-        controller.init();
-        await controller.sendMessage({ input: "Hi" });
-        gate.resolve(null);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        assert.equal(mock.resumeStreamCalls.length, 0);
-        assert.equal(controller.getStatus(), "ready");
-    });
-
-    test("hydration is skipped when the client lacks loadConversation", async () => {
-        const mock = createMockClient();
-        const client = {
-            ...mock.client,
-            loadConversation: undefined,
-        } as unknown as BetterAgentClient;
-        const controller = createAgentChatController(client, {
-            agent: "support",
-            delivery: "final",
-            conversationId: "conv_1",
-            hydrateFromServer: true,
-            resume: { streamId: "stream_1" },
-        });
-
-        controller.init();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        assert.equal(mock.loadConversationCalls.length, 0);
-        assert.equal(mock.resumeStreamCalls.length, 1);
-    });
-
-    test("warns once for sendClientHistory with conversationId, but not on retry", async () => {
-        const mock = createMockClient();
-        const warnings: string[] = [];
-        const originalWarn = console.warn;
-        console.warn = (message?: unknown) => {
-            warnings.push(String(message ?? ""));
-        };
+    test("resume does not surface an error while the page is tearing down", async () => {
+        const previousWindow = (globalThis as { window?: Window }).window;
+        (globalThis as { window?: Window }).window = {
+            __baPageTeardown: true,
+            __baPageTeardownInstalled: true,
+        } as Window;
 
         try {
-            mock.setRunImpl(async () => createRunResult());
-            const controller = createAgentChatController(mock.client, {
-                agent: "support",
-                delivery: "final",
-                conversationId: "conv_1",
-                initialMessages: [
-                    { localId: "u_1", role: "user", parts: [{ type: "text", text: "Hi" }] },
-                ],
+            let resolveFinish: (finish: AgentControllerFinish) => void = () => {};
+            const finished = new Promise<AgentControllerFinish>((resolve) => {
+                resolveFinish = resolve;
             });
+            const c = createAgentController(
+                mockClient(
+                    async function* () {
+                        /* no-op */
+                    },
+                    {
+                        resumeStream() {
+                            return {
+                                async *[Symbol.asyncIterator]() {
+                                    yield* [];
+                                    throw new Error("network dropped");
+                                },
+                            };
+                        },
+                    },
+                ).agent("assistant" as never),
+                {
+                    resume: {
+                        runId: "run_1",
+                        afterSequence: 0,
+                    },
+                    onFinish: resolveFinish,
+                },
+            );
+            c.start();
 
-            await controller.sendMessage({ input: "First", sendClientHistory: true });
-            await controller.sendMessage({ input: "Second", sendClientHistory: true });
-            await controller.retryMessage("u_1");
+            const finish = await finished;
+
+            expect(finish).toMatchObject({
+                isAbort: true,
+                isError: false,
+            });
+            expect(c.getSnapshot()).toMatchObject({
+                status: "ready",
+                error: undefined,
+            });
         } finally {
-            console.warn = originalWarn;
+            if (previousWindow === undefined) {
+                (globalThis as { window?: Window }).window = undefined;
+            } else {
+                (globalThis as { window?: Window }).window = previousWindow;
+            }
         }
-
-        assert.equal(warnings.length, 1);
-    });
-
-    test("onFinish receives the effective per-run conversationId", async () => {
-        const mock = createMockClient();
-        const seenConversationIds: string[] = [];
-        mock.setRunImpl(async () => createRunResult());
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            conversationId: "conv_default",
-            onFinish: (params) => {
-                if (params.conversationId) {
-                    seenConversationIds.push(params.conversationId);
-                }
-            },
-        });
-
-        await controller.sendMessage({
-            input: "Hi",
-            conversationId: "conv_override",
-        });
-
-        assert.deepEqual(seenConversationIds, ["conv_override"]);
-    });
-
-    test("clearError returns controller to ready state", () => {
-        const mock = createMockClient();
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "stream",
-            optimisticUserMessage: { enabled: true, onError: "fail" },
-        });
-
-        mock.setStreamImpl(() =>
-            toAsyncIterable([
-                {
-                    type: "RUN_ERROR",
-                    timestamp: 1,
-                    runId: "run_1",
-                    agentName: "support",
-                    error: { message: "Boom" },
-                } as unknown as ClientEvent,
-            ]),
-        );
-
-        return controller.sendMessage({ input: "Hi" }).then(() => {
-            assert.equal(controller.getStatus(), "error");
-            controller.clearError();
-            assert.equal(controller.getStatus(), "ready");
-            assert.equal(controller.getError(), undefined);
-        });
-    });
-
-    test("prepareMessages overrides default client-history serialization", async () => {
-        const mock = createMockClient();
-        mock.setRunImpl(async () => createRunResult());
-
-        const controller = createAgentChatController(mock.client, {
-            agent: "support",
-            delivery: "final",
-            initialMessages: [
-                { localId: "u_1", role: "user", parts: [{ type: "text", text: "Earlier" }] },
-            ],
-            prepareMessages: ({ messages, input }) => [
-                {
-                    type: "message",
-                    role: "system",
-                    content: `count=${messages.length.toString()}`,
-                },
-                {
-                    type: "message",
-                    role: "user",
-                    content: String(input),
-                },
-            ],
-        });
-
-        await controller.sendMessage({ input: "Now", sendClientHistory: true });
-
-        assert.deepEqual(mock.runCalls[0]?.input.input, [
-            { type: "message", role: "system", content: "count=2" },
-            { type: "message", role: "user", content: "Now" },
-        ]);
     });
 });

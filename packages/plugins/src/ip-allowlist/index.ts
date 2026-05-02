@@ -1,2 +1,2 @@
 export type * from "./types";
-export { ipAllowlistPlugin } from "./plugin";
+export { ipAllowlist } from "./plugin";

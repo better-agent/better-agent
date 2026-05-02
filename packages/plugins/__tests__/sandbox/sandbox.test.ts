@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import type { ToolRunContext } from "@better-agent/core";
+import type { ToolExecutionContext } from "@better-agent/core";
 import type { SandboxClient } from "../../src";
-import { sandboxPlugin } from "../../src";
+import { sandbox } from "../../src";
 
 type TestServerTool = {
-    kind: "server";
+    target: "server";
     name: string;
-    handler: (args: unknown, ctx: ToolRunContext) => unknown;
+    execute: (args: unknown, ctx: ToolExecutionContext<unknown>) => unknown;
 };
 
 const createDriver = () => {
@@ -63,23 +63,31 @@ const createDriver = () => {
     };
 };
 
-const createToolContext = (overrides: Partial<ToolRunContext> = {}): ToolRunContext => ({
+const createToolContext = (
+    overrides: Partial<ToolExecutionContext<unknown>> = {},
+): ToolExecutionContext<unknown> => ({
     runId: "run-1",
     agentName: "assistant",
-    conversationId: "conv-1",
-    parentMessageId: "msg-1",
+    threadId: "conv-1",
+    toolCallId: "tool-1",
+    toolName: "sandbox_exec",
     signal: new AbortController().signal,
-    emit: async () => {},
+    context: undefined,
+    state: {
+        get: () => undefined,
+        set: () => {},
+        patch: () => {},
+    },
     ...overrides,
 });
 
 const getServerTool = async (
-    plugin: ReturnType<typeof sandboxPlugin>,
+    plugin: ReturnType<typeof sandbox>,
     name: string,
 ): Promise<TestServerTool> => {
     const source = plugin.tools;
     if (!source) {
-        throw new Error("sandboxPlugin did not provide any tools.");
+        throw new Error("sandbox did not provide any tools.");
     }
 
     const resolved = Array.isArray(source)
@@ -90,21 +98,21 @@ const getServerTool = async (
     const tools = Array.isArray(resolved) ? resolved : [resolved];
 
     for (const tool of tools) {
-        if (tool.kind === "server" && tool.name === name) {
-            return tool;
+        if ("target" in tool && tool.target === "server" && tool.name === name && tool.execute) {
+            return tool as TestServerTool;
         }
     }
 
     throw new Error(`Missing server tool '${name}'.`);
 };
 
-describe("sandboxPlugin", () => {
+describe("sandbox", () => {
     test("rejects ttl lifecycle settings for Daytona", () => {
         const state = createDriver();
         state.driver.provider = "daytona";
 
         expect(() =>
-            sandboxPlugin({
+            sandbox({
                 client: state.driver,
                 createConfig: {
                     lifecycle: {
@@ -120,7 +128,7 @@ describe("sandboxPlugin", () => {
         state.driver.provider = "e2b";
 
         expect(() =>
-            sandboxPlugin({
+            sandbox({
                 client: state.driver,
                 createConfig: {
                     startupTimeoutMs: 30_000,
@@ -129,7 +137,7 @@ describe("sandboxPlugin", () => {
         ).toThrow(/startupTimeoutMs/);
 
         expect(() =>
-            sandboxPlugin({
+            sandbox({
                 client: state.driver,
                 createConfig: {
                     lifecycle: {
@@ -140,18 +148,18 @@ describe("sandboxPlugin", () => {
         ).toThrow(/idleStopMs/);
     });
 
-    test("reuses one sandbox across one conversation when configured with client", async () => {
+    test("reuses one sandbox across one thread when configured with client", async () => {
         const state = createDriver();
-        const plugin = sandboxPlugin({ client: state.driver });
+        const plugin = sandbox({ client: state.driver });
         const execTool = await getServerTool(plugin, "sandbox_exec");
 
-        const first = await execTool.handler(
+        const first = await execTool.execute(
             { cmd: "pwd" },
-            createToolContext({ runId: "run-1", parentMessageId: "msg-1" }),
+            createToolContext({ runId: "run-1", toolCallId: "msg-1" }),
         );
-        const second = await execTool.handler(
+        const second = await execTool.execute(
             { cmd: "ls" },
-            createToolContext({ runId: "run-2", parentMessageId: "msg-2" }),
+            createToolContext({ runId: "run-2", toolCallId: "msg-2" }),
         );
 
         expect(state.created).toEqual(["sbx-1"]);
@@ -173,10 +181,10 @@ describe("sandboxPlugin", () => {
 
     test("uses explicit sandbox ids without creating a managed session", async () => {
         const state = createDriver();
-        const plugin = sandboxPlugin({ client: state.driver });
+        const plugin = sandbox({ client: state.driver });
         const execTool = await getServerTool(plugin, "sandbox_exec");
 
-        const result = await execTool.handler(
+        const result = await execTool.execute(
             { sandboxId: "external-1", cmd: "echo hi" },
             createToolContext(),
         );
@@ -192,23 +200,23 @@ describe("sandboxPlugin", () => {
 
     test("clears the stored sandbox when kill is called", async () => {
         const state = createDriver();
-        const plugin = sandboxPlugin({ client: state.driver });
+        const plugin = sandbox({ client: state.driver });
         const createTool = await getServerTool(plugin, "sandbox_create");
         const killTool = await getServerTool(plugin, "sandbox_kill");
         const execTool = await getServerTool(plugin, "sandbox_exec");
 
-        await createTool.handler({}, createToolContext());
-        const killResult = await killTool.handler({}, createToolContext());
-        const nextExec = await execTool.handler(
+        await createTool.execute({}, createToolContext());
+        const killResult = await killTool.execute({}, createToolContext());
+        const nextExec = await execTool.execute(
             { cmd: "whoami" },
-            createToolContext({ runId: "run-2", parentMessageId: "msg-2" }),
+            createToolContext({ runId: "run-2", toolCallId: "msg-2" }),
         );
 
         expect(state.killed).toEqual(["sbx-1"]);
         expect(killResult).toMatchObject({
             sandboxId: "sbx-1",
             killed: true,
-            clearedSessionKey: "conversation:conv-1",
+            clearedSessionKey: "thread:conv-1",
         });
         expect(state.created).toEqual(["sbx-1", "sbx-2"]);
         expect(nextExec).toMatchObject({
@@ -219,28 +227,28 @@ describe("sandboxPlugin", () => {
 
     test("clears the stored sandbox when killing the managed sandbox by explicit id", async () => {
         const state = createDriver();
-        const plugin = sandboxPlugin({ client: state.driver });
+        const plugin = sandbox({ client: state.driver });
         const createTool = await getServerTool(plugin, "sandbox_create");
         const killTool = await getServerTool(plugin, "sandbox_kill");
         const execTool = await getServerTool(plugin, "sandbox_exec");
 
-        const created = (await createTool.handler({}, createToolContext())) as {
+        const created = (await createTool.execute({}, createToolContext())) as {
             sandboxId: string;
         };
-        const killResult = await killTool.handler(
+        const killResult = await killTool.execute(
             { sandboxId: created.sandboxId },
             createToolContext(),
         );
-        const nextExec = await execTool.handler(
+        const nextExec = await execTool.execute(
             { cmd: "whoami" },
-            createToolContext({ runId: "run-2", parentMessageId: "msg-2" }),
+            createToolContext({ runId: "run-2", toolCallId: "msg-2" }),
         );
 
         expect(state.killed).toEqual(["sbx-1"]);
         expect(killResult).toMatchObject({
             sandboxId: "sbx-1",
             killed: true,
-            clearedSessionKey: "conversation:conv-1",
+            clearedSessionKey: "thread:conv-1",
         });
         expect(state.created).toEqual(["sbx-1", "sbx-2"]);
         expect(nextExec).toMatchObject({
@@ -249,21 +257,21 @@ describe("sandboxPlugin", () => {
         });
     });
 
-    test("does not reuse sandboxes when there is no conversation id", async () => {
+    test("does not reuse sandboxes when there is no thread id", async () => {
         const state = createDriver();
-        const plugin = sandboxPlugin({ client: state.driver });
+        const plugin = sandbox({ client: state.driver });
         const execTool = await getServerTool(plugin, "sandbox_exec");
 
-        await execTool.handler(
+        await execTool.execute(
             { cmd: "pwd" },
-            createToolContext({ conversationId: undefined, runId: "run-1" }),
+            createToolContext({ threadId: undefined, runId: "run-1" }),
         );
-        await execTool.handler(
+        await execTool.execute(
             { cmd: "ls" },
             createToolContext({
-                conversationId: undefined,
+                threadId: undefined,
                 runId: "run-2",
-                parentMessageId: "msg-2",
+                toolCallId: "msg-2",
             }),
         );
 
@@ -272,7 +280,7 @@ describe("sandboxPlugin", () => {
 
     test("resolves scalar create params as createConfig, then input, then createDefaults", async () => {
         const state = createDriver();
-        const plugin = sandboxPlugin({
+        const plugin = sandbox({
             client: state.driver,
             createConfig: {
                 template: "trusted-template",
@@ -284,7 +292,7 @@ describe("sandboxPlugin", () => {
         });
         const createTool = await getServerTool(plugin, "sandbox_create");
 
-        await createTool.handler(
+        await createTool.execute(
             {
                 forceNew: true,
                 template: "llm-template",
@@ -306,7 +314,7 @@ describe("sandboxPlugin", () => {
 
     test("merges envs and metadata with createConfig winning over input and createDefaults", async () => {
         const state = createDriver();
-        const plugin = sandboxPlugin({
+        const plugin = sandbox({
             client: state.driver,
             createConfig: {
                 envs: {
@@ -334,7 +342,7 @@ describe("sandboxPlugin", () => {
         });
         const createTool = await getServerTool(plugin, "sandbox_create");
 
-        await createTool.handler(
+        await createTool.execute(
             {
                 forceNew: true,
                 envs: {
@@ -387,19 +395,19 @@ describe("sandboxPlugin", () => {
     ] as const) {
         test(`does not reuse sandboxes when custom sessionKey returns ${testCase.name}`, async () => {
             const state = createDriver();
-            const plugin = sandboxPlugin({
+            const plugin = sandbox({
                 client: state.driver,
                 sessionKey: testCase.sessionKey,
             });
             const execTool = await getServerTool(plugin, "sandbox_exec");
 
-            await execTool.handler(
+            await execTool.execute(
                 { cmd: "pwd" },
-                createToolContext({ runId: "run-1", parentMessageId: "msg-1" }),
+                createToolContext({ runId: "run-1", toolCallId: "msg-1" }),
             );
-            await execTool.handler(
+            await execTool.execute(
                 { cmd: "ls" },
-                createToolContext({ runId: "run-2", parentMessageId: "msg-2" }),
+                createToolContext({ runId: "run-2", toolCallId: "msg-2" }),
             );
 
             expect(state.created).toEqual(["sbx-1", "sbx-2"]);
@@ -408,20 +416,19 @@ describe("sandboxPlugin", () => {
 
     test("reuses sandboxes when custom sessionKey returns a stable key", async () => {
         const state = createDriver();
-        const plugin = sandboxPlugin({
+        const plugin = sandbox({
             client: state.driver,
-            sessionKey: ({ conversationId }) =>
-                conversationId ? `stable:${conversationId}` : undefined,
+            sessionKey: ({ threadId }) => (threadId ? `stable:${threadId}` : undefined),
         });
         const execTool = await getServerTool(plugin, "sandbox_exec");
 
-        await execTool.handler(
+        await execTool.execute(
             { cmd: "pwd" },
-            createToolContext({ runId: "run-1", parentMessageId: "msg-1" }),
+            createToolContext({ runId: "run-1", toolCallId: "msg-1" }),
         );
-        await execTool.handler(
+        await execTool.execute(
             { cmd: "ls" },
-            createToolContext({ runId: "run-2", parentMessageId: "msg-2" }),
+            createToolContext({ runId: "run-2", toolCallId: "msg-2" }),
         );
 
         expect(state.created).toEqual(["sbx-1"]);
@@ -433,10 +440,10 @@ describe("sandboxPlugin", () => {
 
     test("rejects whitespace-only explicit sandbox ids", async () => {
         const state = createDriver();
-        const plugin = sandboxPlugin({ client: state.driver });
+        const plugin = sandbox({ client: state.driver });
         const killTool = await getServerTool(plugin, "sandbox_kill");
 
-        expect(killTool.handler({ sandboxId: "   " }, createToolContext())).rejects.toMatchObject({
+        expect(killTool.execute({ sandboxId: "   " }, createToolContext())).rejects.toMatchObject({
             code: "VALIDATION_FAILED",
             message: "`sandboxId` must be a non-empty string when provided.",
         });
@@ -470,12 +477,12 @@ describe("sandboxPlugin", () => {
             state.driver.getHost = async (params) =>
                 testCase.getHost(params.sandboxId, params.port);
 
-            const plugin = sandboxPlugin({ client: state.driver });
+            const plugin = sandbox({ client: state.driver });
             const createTool = await getServerTool(plugin, "sandbox_create");
             const getHostTool = await getServerTool(plugin, "sandbox_get_host");
 
-            await createTool.handler({}, createToolContext());
-            const result = await getHostTool.handler({ port: 3000 }, createToolContext());
+            await createTool.execute({}, createToolContext());
+            const result = await getHostTool.execute({ port: 3000 }, createToolContext());
 
             expect(result).toMatchObject(testCase.expected);
         });
