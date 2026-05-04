@@ -10,9 +10,9 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "@farming-labs/docs": "^0.1.59",
-        "@farming-labs/next": "^0.1.59",
-        "@farming-labs/theme": "^0.1.59",
+        "@farming-labs/docs": "^0.1.66",
+        "@farming-labs/next": "^0.1.66",
+        "@farming-labs/theme": "^0.1.66",
         "@vercel/analytics": "^1.5.0",
         "@vercel/speed-insights": "^1.2.0",
         "geist": "^1.7.0",
