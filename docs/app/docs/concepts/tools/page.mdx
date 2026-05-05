@@ -61,6 +61,11 @@ abort signal, and state helpers.
 Client tools run in the user's app. They do not define `execute`. The run
 pauses until the client returns a result.
 
+<Callout type="info">
+  Client tools requires [Storage](/docs/concepts/storage) to be configured for
+  runs to store interrupted runs and resume later.
+</Callout>
+
 ```typescript
 const confirmAddress = defineTool({
   name: "confirm_address",
@@ -73,7 +78,7 @@ const confirmAddress = defineTool({
 });
 ```
 
-Client tool pauses use AG-UI interrupts. Each interrupt has an id and response
+Client tool pauses use [AG-UI](https://docs.ag-ui.com) interrupts. Each interrupt has an id and response
 schema, so it can be stored, rendered later, and resumed across requests.
 
 When the model calls a client tool, the run returns an interrupt. Manual resume

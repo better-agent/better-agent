@@ -13,6 +13,11 @@ Better Agent represents these pauses as AG-UI interrupts. Interrupts have stable
 ids, so your UI can show a pending decision, keep it durable with the run, and
 resume later.
 
+<Callout type="info">
+  Human in the loop requires [Storage](/docs/concepts/storage) to be configured
+  for runs to store interrupted runs and resume later.
+</Callout>
+
 ## Require approval
 
 Add `approval` to a server tool when it needs a human decision before execution.
@@ -103,11 +108,13 @@ resume requires a `threadId` and [Storage](/docs/concepts/storage).
 ```typescript
 const resumed = await app.agent("support").run({
   threadId: "thread_123",
-  resume: [{
-    interruptId: result.interrupts[0].id,
-    status: "resolved",
-    payload: { approved: true },
-  }],
+  resume: [
+    {
+      interruptId: result.interrupts[0].id,
+      status: "resolved",
+      payload: { approved: true },
+    },
+  ],
 });
 ```
 
@@ -117,21 +124,25 @@ model so it can respond to the user.
 ```typescript
 await app.agent("support").run({
   threadId: "thread_123",
-  resume: [{
-    interruptId: result.interrupts[0].id,
-    status: "resolved",
-    payload: { approved: false },
-  }],
+  resume: [
+    {
+      interruptId: result.interrupts[0].id,
+      status: "resolved",
+      payload: { approved: false },
+    },
+  ],
 });
 ```
 
 Use `status: "cancelled"` when you want to cancel the pending action instead.
 
 ```typescript
-resume: [{
-  interruptId: result.interrupts[0].id,
-  status: "cancelled",
-}]
+resume: [
+  {
+    interruptId: result.interrupts[0].id,
+    status: "cancelled",
+  },
+];
 ```
 
 ## Approval metadata
@@ -212,11 +223,11 @@ pending-tool UI. See [Tools](/docs/concepts/tools) for client tool examples.
 
 Important fields:
 
-| Field | Use |
-| --- | --- |
-| `id` | The interrupt id. Pass it as `interruptId` when resuming. |
-| `reason` | Why the run paused, such as `tool_approval_pending`. |
-| `toolCallId` | The tool call that created the pause. |
-| `responseSchema` | The expected shape of the resume payload. |
-| `metadata` | Extra context for your UI. |
-| `expiresAt` | When the pending decision expires. |
+| Field            | Use                                                       |
+| ---------------- | --------------------------------------------------------- |
+| `id`             | The interrupt id. Pass it as `interruptId` when resuming. |
+| `reason`         | Why the run paused, such as `tool_approval_pending`.      |
+| `toolCallId`     | The tool call that created the pause.                     |
+| `responseSchema` | The expected shape of the resume payload.                 |
+| `metadata`       | Extra context for your UI.                                |
+| `expiresAt`      | When the pending decision expires.                        |
