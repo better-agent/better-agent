@@ -1,6 +1,6 @@
 {
     "name": "create-better-agent",
-    "version": "0.2.0-beta.1",
+    "version": "0.2.0-beta.2",
     "description": "Create a new Better Agent app",
     "license": "MIT",
     "type": "module",

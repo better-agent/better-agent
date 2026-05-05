@@ -16,7 +16,7 @@
         "clean": "turbo clean && rimraf \"node_modules\" \"**/node_modules\" \"**/dist\" \".turbo\"",
         "bump": "bumpp --recursive --no-push --execute \"bun install --force\"",
         "release:prepare": "bumpp --recursive --no-commit --no-push --no-tag --execute \"bun install --force\"",
-        "release": "bumpp --recursive --no-push --execute \"bun install --force\"",
+        "release": "bumpp --recursive --no-push --all --execute \"bun install --force\"",
         "release:beta": "bumpp prerelease --preid beta --recursive --no-push --execute \"bun install --force\"",
         "release:check": "bun install --frozen-lockfile && bun run check"
     },
