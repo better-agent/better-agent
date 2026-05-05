@@ -52,8 +52,8 @@
     },
     "peerDependencies": {
         "@better-agent/core": "workspace:*",
-        "@upstash/redis": "*",
-        "redis": "*"
+        "@upstash/redis": ">=1 <2",
+        "redis": ">=4 <6"
     },
     "peerDependenciesMeta": {
         "@upstash/redis": {
