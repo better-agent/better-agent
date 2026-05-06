@@ -133,6 +133,7 @@ describe("stream", () => {
 
     test("wraps errors thrown by fullStream iteration", async () => {
         async function* failingParts() {
+            yield 1;
             throw new Error("load api key failed");
         }
 
