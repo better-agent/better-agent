@@ -1,6 +1,6 @@
 {
     "name": "@better-agent/kysely",
-    "version": "0.2.0-beta.2",
+    "version": "0.2.0-beta.3",
     "description": "Better Agent Kysely adapter",
     "license": "MIT",
     "repository": {

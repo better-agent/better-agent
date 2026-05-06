@@ -1,6 +1,6 @@
 {
     "name": "@better-agent/adapters",
-    "version": "0.2.0-beta.2",
+    "version": "0.2.0-beta.3",
     "description": "Better Agent framework adapters",
     "license": "MIT",
     "repository": {
