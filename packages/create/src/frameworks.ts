@@ -6,7 +6,8 @@ export const frameworks = {
         baseUrl: "/api/agents",
         serverFile: "lib/better-agent/server.ts",
         dynamicFiles: [
-            { output: ".env.example", template: "dynamic/.env.example.hbs" },
+            { output: ".gitignore", template: "dynamic/gitignore.hbs" },
+            { output: ".env.example", template: "dynamic/env.example.hbs" },
             { output: "README.md", template: "dynamic/README.md.hbs" },
             { output: "package.json", template: "dynamic/package.json.hbs" },
             {
@@ -23,7 +24,9 @@ export const frameworks = {
         baseUrl: "/api/agents",
         serverFile: "src/lib/better-agent/server.ts",
         dynamicFiles: [
-            { output: ".env.example", template: "dynamic/.env.example.hbs" },
+            { output: ".gitignore", template: "dynamic/gitignore.hbs" },
+            { output: ".npmrc", template: "dynamic/npmrc.hbs" },
+            { output: ".env.example", template: "dynamic/env.example.hbs" },
             { output: "README.md", template: "dynamic/README.md.hbs" },
             { output: "package.json", template: "dynamic/package.json.hbs" },
             {
@@ -39,7 +42,8 @@ export const frameworks = {
         baseUrl: "/api/agents",
         serverFile: "app/lib/better-agent/server.ts",
         dynamicFiles: [
-            { output: ".env.example", template: "dynamic/.env.example.hbs" },
+            { output: ".gitignore", template: "dynamic/gitignore.hbs" },
+            { output: ".env.example", template: "dynamic/env.example.hbs" },
             { output: "README.md", template: "dynamic/README.md.hbs" },
             { output: "package.json", template: "dynamic/package.json.hbs" },
             {
@@ -58,7 +62,8 @@ export const frameworks = {
         baseUrl: "/api/agents",
         serverFile: "src/lib/better-agent/server.ts",
         dynamicFiles: [
-            { output: ".env.example", template: "dynamic/.env.example.hbs" },
+            { output: ".gitignore", template: "dynamic/gitignore.hbs" },
+            { output: ".env.example", template: "dynamic/env.example.hbs" },
             { output: "README.md", template: "dynamic/README.md.hbs" },
             { output: "package.json", template: "dynamic/package.json.hbs" },
             {
@@ -77,7 +82,8 @@ export const frameworks = {
         baseUrl: "/api/agents",
         serverFile: "src/lib/better-agent/server.ts",
         dynamicFiles: [
-            { output: ".env.example", template: "dynamic/.env.example.hbs" },
+            { output: ".gitignore", template: "dynamic/gitignore.hbs" },
+            { output: ".env.example", template: "dynamic/env.example.hbs" },
             { output: "README.md", template: "dynamic/README.md.hbs" },
             { output: "package.json", template: "dynamic/package.json.hbs" },
             {
@@ -96,7 +102,8 @@ export const frameworks = {
         baseUrl: "/api/agents",
         serverFile: "src/lib/better-agent/server.ts",
         dynamicFiles: [
-            { output: ".env.example", template: "dynamic/.env.example.hbs" },
+            { output: ".gitignore", template: "dynamic/gitignore.hbs" },
+            { output: ".env.example", template: "dynamic/env.example.hbs" },
             { output: "README.md", template: "dynamic/README.md.hbs" },
             { output: "package.json", template: "dynamic/package.json.hbs" },
             {
@@ -116,7 +123,8 @@ export const frameworks = {
         baseUrl: "/api/agents",
         serverFile: "lib/better-agent/server.ts",
         dynamicFiles: [
-            { output: ".env.example", template: "dynamic/.env.example.hbs" },
+            { output: ".gitignore", template: "dynamic/gitignore.hbs" },
+            { output: ".env.example", template: "dynamic/env.example.hbs" },
             { output: "README.md", template: "dynamic/README.md.hbs" },
             { output: "package.json", template: "dynamic/package.json.hbs" },
             {
