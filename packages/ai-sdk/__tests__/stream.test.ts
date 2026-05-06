@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { EventType } from "@better-agent/core";
+import { BetterAgentError } from "@better-agent/shared/errors";
 import type { streamText } from "ai";
 import { toBetterAgentStreamResult } from "../src/stream";
 
@@ -128,5 +129,30 @@ describe("stream", () => {
         stream.final.catch(() => undefined);
 
         expect(collect(stream.events)).rejects.toThrow("stream failed");
+    });
+
+    test("wraps errors thrown by fullStream iteration", async () => {
+        async function* failingParts() {
+            yield 1;
+            throw new Error("load api key failed");
+        }
+
+        const result = {
+            fullStream: failingParts(),
+        } as unknown as StreamResultInput;
+
+        const stream = toBetterAgentStreamResult(result, "message-1");
+        stream.final.catch(() => undefined);
+
+        let caught: unknown;
+        try {
+            await collect(stream.events);
+        } catch (error) {
+            caught = error;
+        }
+
+        expect(caught).toBeInstanceOf(BetterAgentError);
+        expect((caught as BetterAgentError).code).toBe("UPSTREAM_FAILED");
+        expect((caught as BetterAgentError).message).toBe("load api key failed");
     });
 });

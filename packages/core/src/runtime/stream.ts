@@ -427,6 +427,7 @@ export async function stream<
                             }),
                     },
                 );
+                void streamResult.final.catch(() => undefined);
 
                 const buffer = createToolCallBuffer();
                 const providerToolMessages = new Map<string, AgentToolMessage>();

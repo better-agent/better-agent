@@ -497,6 +497,7 @@ export const toBetterAgentStreamResult = (
         resolveFinal = resolve;
         rejectFinal = reject;
     });
+    void final.catch(() => undefined);
 
     async function* events(): AsyncIterable<AgentEvent> {
         try {
@@ -505,8 +506,9 @@ export const toBetterAgentStreamResult = (
                 shouldReadStructured && "output" in result ? await result.output : undefined;
             resolveFinal(createFinalResult(messageId, state, structured, context));
         } catch (error) {
-            rejectFinal(error);
-            throw error;
+            const wrappedError = wrapAiSdkError(error);
+            rejectFinal(wrappedError);
+            throw wrappedError;
         }
     }
 
