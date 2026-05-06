@@ -2,10 +2,17 @@ import { BetterAgentError } from "@better-agent/shared/errors";
 import { createAbortMethod } from "./abort";
 import { createAppContext } from "./create-app-context";
 import { createBetterAgentHandler } from "./handler";
+import { resolvedAgentRunId } from "./helpers";
 import { createResumeStreamMethod } from "./resume-stream";
 import { createRunMethod } from "./run";
 import { createStreamMethod } from "./stream";
-import type { AgentByName, AgentHandle, BetterAgentApp, BetterAgentConfig } from "./types";
+import type {
+    AgentByName,
+    AgentHandle,
+    BaseAgentHandle,
+    BetterAgentApp,
+    BetterAgentConfig,
+} from "./types";
 
 export function betterAgent<const TConfig extends BetterAgentConfig>(
     config: TConfig,
@@ -43,17 +50,47 @@ export function betterAgent<const TConfig extends BetterAgentConfig>(
         const definition = getAgent(name);
         const memory = context.getAgentMemory(definition);
 
-        return {
+        const baseHandle = {
             name: definition.name,
             definition,
-            ...(memory ? { memory } : {}),
             run(input) {
                 return runResolved(definition, input);
             },
             stream(input) {
                 return streamResolved(definition, input);
             },
-        } as AgentHandle<AgentByName<TAgents, TName>, TConfig>;
+            async abort(runId) {
+                const resolvedRunId = await resolvedAgentRunId(
+                    name,
+                    context.config.storage,
+                    runId,
+                    undefined,
+                    "abort request",
+                );
+                return abortRun(resolvedRunId);
+            },
+            resumeStream({ runId, afterSequence, signal }) {
+                return (async function* () {
+                    const resolvedRunId = await resolvedAgentRunId(
+                        name,
+                        context.config.storage,
+                        runId,
+                        undefined,
+                        "resume stream",
+                    );
+                    yield* resumeStream({ runId: resolvedRunId, afterSequence, signal });
+                })();
+            },
+        } as BaseAgentHandle<AgentByName<TAgents, TName>>;
+
+        if (memory) {
+            return {
+                ...baseHandle,
+                memory,
+            } as unknown as AgentHandle<AgentByName<TAgents, TName>, TConfig>;
+        }
+
+        return baseHandle as AgentHandle<AgentByName<TAgents, TName>, TConfig>;
     };
 
     const app = {

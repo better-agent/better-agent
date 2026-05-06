@@ -51,6 +51,14 @@ export interface BetterAgentClientAgentHandle<
     runs: BetterAgentClientRuns;
     run(input: ClientRunInput<TApp, TName>, options?: RequestOptions): Promise<RunResult>;
     stream(input: ClientRunInput<TApp, TName>, options?: RequestOptions): AsyncIterable<AgentEvent>;
+    abort(runId?: string, options?: RequestOptions): Promise<void>;
+    resumeStream(
+        input: {
+            runId?: string;
+            afterSequence?: number;
+        },
+        options?: RequestOptions,
+    ): AsyncIterable<AgentEvent>;
 }
 
 export type BetterAgentClientAgentMemoryHandle<
@@ -117,7 +125,13 @@ export interface BetterAgentClientMemory {
 }
 
 export interface BetterAgentClientRuns {
+    /**
+     * @deprecated Use `agent("name").abort(runId)` instead.
+     */
     abort(runId: string, options?: RequestOptions): Promise<void>;
+    /**
+     * @deprecated Use `agent("name").resumeStream({ runId })` instead.
+     */
     resumeStream(
         input: {
             runId: string;
@@ -133,5 +147,10 @@ export interface BetterAgentClient<TApp = unknown> {
     ): AgentHasMemory<TApp, TName> extends true
         ? BetterAgentClientAgentMemoryHandle<TApp, TName>
         : BetterAgentClientAgentHandle<TApp, TName>;
+    /**
+     * @deprecated Use agent-scoped methods instead:
+     * - `agent("name").abort(runId)`
+     * - `agent("name").resumeStream({ runId })`
+     */
     runs: BetterAgentClientRuns;
 }
