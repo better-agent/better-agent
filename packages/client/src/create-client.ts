@@ -221,6 +221,48 @@ export function createClient<TApp = unknown>(
                         },
                     },
                 },
+                async abort(runId, options) {
+                    await requestJson(
+                        config,
+                        {
+                            url: withParam(
+                                joinURL(baseURL, `/${encodedAgentName}/abort`),
+                                "runId",
+                                runId,
+                            ),
+                            method: "POST",
+                        },
+                        options,
+                    );
+                },
+                resumeStream(input, options) {
+                    return (async function* () {
+                        const headers = new Headers(options?.headers);
+                        if (typeof input.afterSequence === "number") {
+                            headers.set("last-event-id", String(input.afterSequence));
+                        }
+
+                        const events = await requestSse(
+                            config,
+                            {
+                                url: withParam(
+                                    joinURL(baseURL, `/${encodedAgentName}/stream`),
+                                    "runId",
+                                    input.runId,
+                                ),
+                                method: "GET",
+                            },
+                            {
+                                ...options,
+                                headers,
+                            },
+                        );
+
+                        for await (const event of events) {
+                            yield event;
+                        }
+                    })();
+                },
             };
 
             agentHandles.set(agentKey, handle);

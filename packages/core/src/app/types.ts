@@ -69,7 +69,13 @@ export type StructuredOutputForAgent<TAgent, TOutput> = TOutput extends AgentOut
     : InferAgentOutput<OutputForAgent<TAgent>>;
 
 export interface BetterAgentRuns {
+    /**
+     * @deprecated Use `agent("name").abort(runId)` instead.
+     */
     abort(runId: string): Promise<void>;
+    /**
+     * @deprecated Use `agent("name").resumeStream({ runId })` instead.
+     */
     resumeStream(input: {
         runId: string;
         afterSequence?: number;
@@ -77,7 +83,7 @@ export interface BetterAgentRuns {
     }): AsyncIterable<AgentEvent & { seq: number }>;
 }
 
-export interface BaseAgentHandle<TAgent extends AnyDefinedAgent> {
+export type BaseAgentHandle<TAgent extends AnyDefinedAgent> = {
     name: TAgent["name"];
     definition: TAgent;
     run<TState = AgentState, TOutput extends AgentOutput | undefined = undefined>(
@@ -96,7 +102,13 @@ export interface BaseAgentHandle<TAgent extends AnyDefinedAgent> {
             TOutput
         >,
     ): Promise<StreamResult<TState, StructuredOutputForAgent<TAgent, TOutput>>>;
-}
+    abort(runId?: string): Promise<void>;
+    resumeStream(input: {
+        runId?: string;
+        afterSequence?: number;
+        signal?: AbortSignal;
+    }): AsyncIterable<AgentEvent & { seq: number }>;
+};
 
 export type AgentHandle<
     TAgent extends AnyDefinedAgent,
@@ -119,5 +131,10 @@ export interface BetterAgentApp<
     agent<TName extends TAgents[number]["name"]>(
         name: TName,
     ): AgentHandle<AgentByName<TAgents, TName>, TConfig>;
+    /**
+     * @deprecated Use agent-scoped methods instead:
+     * - `agent("name").abort(runId)`
+     * - `agent("name").resumeStream({ runId })`
+     */
     runs: BetterAgentRuns;
 }
