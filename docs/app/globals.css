@@ -1334,7 +1334,9 @@ aside#nd-sidebar-mobile [data-radix-scroll-area-viewport] button:hover {
 
 .primitives-shiki .shiki {
     margin: 0;
-    overflow-x: auto;
+    min-width: 100%;
+    width: max-content;
+    overflow: visible;
     background: transparent !important;
     color: color-mix(in srgb, var(--shiki-light) 76%, var(--foreground) 24%) !important;
     font-family: var(--font-geist-mono), ui-monospace, monospace;
@@ -1344,7 +1346,6 @@ aside#nd-sidebar-mobile [data-radix-scroll-area-viewport] button:hover {
 
 .primitives-shiki .shiki code {
     display: block;
-    min-width: max-content;
 }
 
 .primitives-shiki .shiki span {
@@ -1405,17 +1406,6 @@ aside#nd-sidebar-mobile [data-radix-scroll-area-viewport] button:hover {
 }
 
 .primitive-scrollbar-hidden::-webkit-scrollbar {
-    display: none;
-}
-
-:is(#nd-sidebar, aside#nd-sidebar-mobile)
-    :is(
-        a[href="/docs/concepts"],
-        a[href="/docs/providers"],
-        a[href="/docs/database"],
-        a[href="/docs/integrations"],
-        a[href="/docs/plugins"]
-    ) {
     display: none;
 }
 
