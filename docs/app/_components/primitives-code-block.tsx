@@ -18,7 +18,7 @@ export default async function PrimitivesCodeBlock({ code, filename }: Primitives
 
     return (
         <div
-            className="code-demo-pane my-0 flex h-[22rem] max-h-[22rem] flex-col overflow-hidden border border-[color:var(--border)] sm:h-[24rem] sm:max-h-[24rem]"
+            className="code-demo-pane my-0 flex flex-col overflow-hidden border border-[color:var(--border)] sm:h-[24rem] sm:max-h-[24rem]"
             style={{ background: "var(--code-block-bg)" }}
         >
             <div
@@ -33,7 +33,7 @@ export default async function PrimitivesCodeBlock({ code, filename }: Primitives
                 </span>
             </div>
             <div
-                className="primitives-shiki min-h-0 flex-1 overflow-auto pt-3 pr-4 pb-4 sm:pt-4 sm:pr-5 sm:pb-5"
+                className="primitives-shiki primitive-scrollbar-hidden min-h-0 flex-1 overflow-auto pt-3 pr-4 pb-4 sm:pt-4 sm:pr-5 sm:pb-5"
                 dangerouslySetInnerHTML={{ __html: html }}
             />
         </div>

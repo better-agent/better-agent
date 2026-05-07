@@ -43,7 +43,11 @@ export default function PrimitivesTabs({ panels, tabs }: PrimitivesTabsProps) {
                 </div>
             </div>
 
-            <div aria-labelledby={`primitive-tab-${activeTab}`} role="tabpanel">
+            <div
+                aria-labelledby={`primitive-tab-${activeTab}`}
+                className="overflow-hidden"
+                role="tabpanel"
+            >
                 {panels[activeTab]}
             </div>
         </div>
