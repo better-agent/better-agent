@@ -121,6 +121,7 @@ export function aiSdkTextModel<TProviderOptions = unknown, TModelId extends stri
                 const result = aiStreamText({
                     model: options.model,
                     ...toTextGenerateOptions(input),
+                    onError: () => {},
                 } as never);
 
                 return createTextGenerationStream(result.fullStream);
@@ -166,6 +167,7 @@ function createTextGenerationStream(
         resolveFinal = resolve;
         rejectFinal = reject;
     });
+    void final.catch(() => undefined);
 
     async function* events(): AsyncIterable<AgentEvent> {
         try {

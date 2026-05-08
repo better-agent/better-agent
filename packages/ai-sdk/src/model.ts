@@ -76,6 +76,7 @@ export const aiSdkModel = <
                         : {}),
                     abortSignal: context.signal,
                     providerOptions: generateOptions.providerOptions as never,
+                    onError: () => {},
                 });
 
                 return toBetterAgentStreamResult(

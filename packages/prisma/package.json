@@ -1,6 +1,6 @@
 {
     "name": "@better-agent/prisma",
-    "version": "0.2.0-beta.1",
+    "version": "0.2.0-beta.4",
     "description": "Better Agent Prisma adapter",
     "license": "MIT",
     "repository": {
@@ -53,12 +53,14 @@
     },
     "devDependencies": {
         "@better-agent/core": "workspace:*",
+        "@prisma/client": "^6.0.0",
         "@types/bun": "^1.3.12",
-        "@types/node": "^22.19.17"
+        "@types/node": "^22.19.17",
+        "prisma": "^6.0.0"
     },
     "peerDependencies": {
         "@better-agent/core": "workspace:*",
-        "@prisma/client": "*",
-        "prisma": "*"
+        "@prisma/client": "^6.0.0",
+        "prisma": "^6.0.0"
     }
 }

@@ -416,3 +416,40 @@ export function resolveEffectiveRunConfig<TContext = unknown, TProviderOptions =
         resume: input.resume,
     };
 }
+
+export const resolvedAgentRunId = async (
+    agentName: string,
+    storage?: BetterAgentStorage,
+    runId?: string,
+    scope?: string,
+    action = "request",
+): Promise<string> => {
+    if (runId) {
+        return runId;
+    }
+
+    if (!storage) {
+        throw BetterAgentError.fromCode(
+            "VALIDATION_FAILED",
+            `Please provide runid or run storage to ${action}.`,
+        );
+    }
+
+    const result = await resolveUnsupportedStorageTable(() =>
+        storage.list<RunRecord>(storageTables.runs, {
+            where: { agentName, status: "running", ...(scope ? { scope } : {}) },
+            orderBy: { startedAt: "desc" },
+            take: 1,
+        }),
+    );
+
+    const resolvedRunId = result.supported ? result.value.items[0]?.runId : undefined;
+    if (!resolvedRunId) {
+        throw BetterAgentError.fromCode(
+            "VALIDATION_FAILED",
+            `Please provide runid or run storage to ${action}.`,
+        );
+    }
+
+    return resolvedRunId;
+};

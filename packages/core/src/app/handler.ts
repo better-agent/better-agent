@@ -13,7 +13,11 @@ import type { AuthContext } from "../auth/types";
 import { type AgentMemory, type MemoryThread, defaultGenerateMemoryId } from "../memory";
 import { createPluginRuntime } from "../plugins";
 import { type RunRecord, type StreamRecord, storageTables } from "../storage";
-import { getInterruptedRunInterrupts, resolveUnsupportedStorageTable } from "./helpers";
+import {
+    getInterruptedRunInterrupts,
+    resolveUnsupportedStorageTable,
+    resolvedAgentRunId,
+} from "./helpers";
 import type { BetterAgentApp } from "./types";
 
 export interface CreateBetterAgentHandlerOptions {
@@ -97,7 +101,7 @@ export function createBetterAgentHandler(
         return memory;
     };
 
-    const resolveMemoryScope = async (input: {
+    const resolveAgentScope = async (input: {
         agentName: string;
         auth: AuthContext | null;
         request: Request;
@@ -121,10 +125,34 @@ export function createBetterAgentHandler(
             : resolveDefaultScope(input.auth);
 
         if (!scope) {
-            throwForbidden("Memory scope could not be resolved for this request.");
+            throwForbidden("Agent auth scope could not be resolved for this request.");
         }
 
         return scope;
+    };
+
+    const resolveRunLookupScope = async (input: {
+        agentName: string;
+        auth: AuthContext | null;
+        request: Request;
+    }): Promise<string | undefined> => {
+        if (!app.config.auth) {
+            return undefined;
+        }
+
+        if (!input.auth) {
+            throwUnauthorized();
+        }
+
+        const memory = getAgentMemory(input.agentName);
+        return memory
+            ? resolveAgentScope({
+                  agentName: input.agentName,
+                  auth: input.auth,
+                  request: input.request,
+                  memory,
+              })
+            : resolveDefaultScope(input.auth);
     };
 
     const requireVisibleThread = (input: {
@@ -159,7 +187,7 @@ export function createBetterAgentHandler(
             request: ctx.request,
             hasAppAuth: Boolean(app.config.auth),
         });
-        const scope = await resolveMemoryScope({
+        const scope = await resolveAgentScope({
             agentName: agent.name,
             auth,
             request: ctx.request,
@@ -227,7 +255,7 @@ export function createBetterAgentHandler(
         const agent = getAgent(record.agentName);
         const memory = getAgentMemory(record.agentName);
         const scope = memory
-            ? await resolveMemoryScope({
+            ? await resolveAgentScope({
                   agentName: agent.name,
                   auth: input.auth,
                   request: input.request,
@@ -238,6 +266,20 @@ export function createBetterAgentHandler(
         if (record.scope !== scope) {
             throw BetterAgentError.fromCode("NOT_FOUND", `Run '${input.runId}' not found.`, {
                 context: { runId: input.runId },
+            });
+        }
+    };
+
+    const requireRunBelongsToAgent = async (input: { runId: string; agentName: string }) => {
+        const storage = app.config.storage;
+        if (!storage) {
+            return;
+        }
+
+        const record = await storage.get<RunRecord>(storageTables.runs, input.runId);
+        if (!record || record.agentName !== input.agentName) {
+            throw BetterAgentError.fromCode("NOT_FOUND", `Run '${input.runId}' not found.`, {
+                context: { runId: input.runId, agentName: input.agentName },
             });
         }
     };
@@ -283,7 +325,7 @@ export function createBetterAgentHandler(
                     }
 
                     if (memory && typeof runBody.threadId === "string") {
-                        const scope = await resolveMemoryScope({
+                        const scope = await resolveAgentScope({
                             agentName: agent.name,
                             auth,
                             request: ctx.request,
@@ -339,6 +381,136 @@ export function createBetterAgentHandler(
                 const result = await app.agent(ctx.params.name).run(input);
 
                 return Response.json(result);
+            } catch (error) {
+                return toErrorResponse(error);
+            }
+        },
+    );
+
+    const abortAgentScoped = createEndpoint(
+        "/:name/abort",
+        {
+            method: "POST",
+            requireRequest: true,
+        },
+        async (ctx) => {
+            try {
+                const url = new URL(ctx.request.url);
+                const requestedRunId = url.searchParams.get("runId") ?? undefined;
+                const agentName = ctx.params.name;
+                const agent = getAgent(agentName);
+                const auth = await resolveAuth(app.config, ctx.request);
+                await assertAgentAccess({
+                    agent,
+                    auth,
+                    request: ctx.request,
+                    hasAppAuth: Boolean(app.config.auth),
+                });
+                const scope = requestedRunId
+                    ? undefined
+                    : await resolveRunLookupScope({
+                          agentName,
+                          auth,
+                          request: ctx.request,
+                      });
+                const resolvedRunId = await resolvedAgentRunId(
+                    agentName,
+                    app.config.storage,
+                    requestedRunId,
+                    scope,
+                    "abort request",
+                );
+
+                await requireRunAccess({
+                    runId: resolvedRunId,
+                    auth,
+                    request: ctx.request,
+                });
+                await requireRunBelongsToAgent({ runId: resolvedRunId, agentName });
+
+                const guardResponse = await runPluginGuards({
+                    agentName,
+                    request: ctx.request,
+                    auth,
+                });
+
+                if (guardResponse) {
+                    return guardResponse;
+                }
+
+                await app.agent(agentName).abort(resolvedRunId);
+
+                return new Response(null, { status: 204 });
+            } catch (error) {
+                return toErrorResponse(error);
+            }
+        },
+    );
+
+    const resumeStreamAgentScoped = createEndpoint(
+        "/:name/stream",
+        {
+            method: "GET",
+            requireRequest: true,
+        },
+        async (ctx) => {
+            try {
+                const url = new URL(ctx.request.url);
+                const requestedRunId = url.searchParams.get("runId") ?? undefined;
+                const agentName = ctx.params.name;
+                const agent = getAgent(agentName);
+                const auth = await resolveAuth(app.config, ctx.request);
+                await assertAgentAccess({
+                    agent,
+                    auth,
+                    request: ctx.request,
+                    hasAppAuth: Boolean(app.config.auth),
+                });
+                const scope = requestedRunId
+                    ? undefined
+                    : await resolveRunLookupScope({
+                          agentName,
+                          auth,
+                          request: ctx.request,
+                      });
+                const resolvedRunId = await resolvedAgentRunId(
+                    agentName,
+                    app.config.storage,
+                    requestedRunId,
+                    scope,
+                    "resume stream",
+                );
+
+                await requireRunAccess({
+                    runId: resolvedRunId,
+                    auth,
+                    request: ctx.request,
+                });
+                await requireRunBelongsToAgent({ runId: resolvedRunId, agentName });
+
+                const guardResponse = await runPluginGuards({
+                    agentName,
+                    request: ctx.request,
+                    auth,
+                });
+
+                if (guardResponse) {
+                    return guardResponse;
+                }
+
+                const afterSequence = Number(ctx.request.headers.get("last-event-id"));
+                const events = app.agent(agentName).resumeStream({
+                    runId: resolvedRunId,
+                    afterSequence: Number.isFinite(afterSequence) ? afterSequence : undefined,
+                    signal: ctx.request.signal,
+                });
+
+                return toSseResponse({
+                    events,
+                    runId: resolvedRunId,
+                    signal: ctx.request.signal,
+                    useEventIds: true,
+                });
             } catch (error) {
                 return toErrorResponse(error);
             }
@@ -673,6 +845,8 @@ export function createBetterAgentHandler(
 
     const routes: Record<string, Endpoint> = {
         run: run,
+        abortAgentScoped: abortAgentScoped,
+        resumeStreamAgentScoped: resumeStreamAgentScoped,
         listThreads: listThreads,
         createThread: createThread,
         getThread: getThread,
@@ -685,6 +859,8 @@ export function createBetterAgentHandler(
     };
     const builtInRouteKeys = new Set([
         "POST /:name/run",
+        "POST /:name/abort",
+        "GET /:name/stream",
         "GET /:name/threads",
         "POST /:name/threads",
         "GET /:name/threads/:threadId",

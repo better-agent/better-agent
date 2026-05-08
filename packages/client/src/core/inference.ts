@@ -34,7 +34,7 @@ export type AgentHasMemory<TApp, TName extends string> = unknown extends TApp
           ? true
           : false;
 
-type ToolsOf<TAgent> = TAgent extends { tools: infer TTools } ? TTools : undefined;
+type ToolsOf<TAgent> = TAgent extends { tools?: infer TTools } ? TTools : undefined;
 
 type StaticToolList<TTools> = TTools extends readonly unknown[] ? TTools : never;
 

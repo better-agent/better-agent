@@ -11,3 +11,5 @@ export const { GET, POST, DELETE } = createDocsMCPAPI({
 });
 
 export const revalidate = false;
+
+export const maxDuration = 800;

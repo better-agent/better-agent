@@ -275,7 +275,7 @@ export default function CtaSection() {
             className="relative mx-auto w-full max-w-[76rem] px-5 pt-8 pb-8 sm:px-8 sm:pt-12 sm:pb-12"
             ref={sectionRef}
         >
-            <div className="relative overflow-hidden rounded-2xl bg-black p-4 md:p-8">
+            <div className="relative overflow-hidden rounded-2xl bg-black p-4 px-2 md:p-8">
                 <Image
                     alt=""
                     aria-hidden="true"

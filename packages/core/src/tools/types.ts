@@ -92,12 +92,13 @@ export interface ClientToolDefinition<
 }
 
 export interface ToolDefinitionInput<
+    TName extends string,
     TInputSchema extends ResolvableSchema = ResolvableSchema,
     TOutputSchema extends ResolvableSchema | undefined = undefined,
     TContext = unknown,
     TTarget extends ToolTarget = ToolTarget,
 > {
-    name: string;
+    name: TName;
     description?: string;
     target: TTarget;
     inputSchema: TInputSchema;

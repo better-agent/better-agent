@@ -378,7 +378,7 @@ export default defineDocs({
     },
     sidebar: {
         collapsible: false,
-        folderIndexBehavior: "toggle",
+        folderIndexBehavior: "hidden",
         banner: <SidebarReleaseBanner />,
     },
 });
