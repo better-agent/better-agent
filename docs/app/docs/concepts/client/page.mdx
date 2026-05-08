@@ -203,13 +203,13 @@ See [Memory](/docs/concepts/memory) for setup.
 Abort an active run from the client.
 
 ```typescript
-await client.runs.abort("run_123");
+await client.agent("support").abort("run_123");
 ```
 
 Resume a stored stream by run id.
 
 ```typescript
-for await (const event of client.runs.resumeStream({
+for await (const event of client.agent("support").resumeStream({
   runId: "run_123",
   afterSequence: 42,
 })) {
