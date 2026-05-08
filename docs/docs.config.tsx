@@ -161,21 +161,15 @@ export default defineDocs({
         docsUrl: "https://better-agent.com",
         useMcp: true,
         maxResults: 8,
-        model: {
-            models: [
-                { id: "gpt-4o-mini", label: "GPT-4o mini (fast)" },
-                { id: "gpt-4o", label: "GPT-4o (quality)" },
-            ],
-            defaultModel: "gpt-4o-mini",
-        },
-        aiLabel: "Better Agent AI",
+        model: "gpt-4o",
         suggestedQuestions: [
             "How do I define my first agent?",
             "How do I add tools to an agent?",
             "How do I connect Better Agent to MCP tools?",
-            "Which provider package should I use?",
+            "How do I setup storage for my Better Agent app?"
         ],
         loader: "shimmer-dots",
+        feedback: false,
     },
     nav: {
         title: "",
