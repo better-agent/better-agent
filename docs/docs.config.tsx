@@ -152,6 +152,31 @@ export default defineDocs({
             getNavigation: true,
         },
     },
+    ai: {
+        enabled: true,
+        mode: "floating",
+        position: "bottom-right",
+        floatingStyle: "full-modal",
+        apiKey: process.env.OPENAI_API_KEY,
+        docsUrl: "https://better-agent.com",
+        useMcp: true,
+        maxResults: 8,
+        model: {
+            models: [
+                { id: "gpt-4o-mini", label: "GPT-4o mini (fast)" },
+                { id: "gpt-4o", label: "GPT-4o (quality)" },
+            ],
+            defaultModel: "gpt-4o-mini",
+        },
+        aiLabel: "Better Agent AI",
+        suggestedQuestions: [
+            "How do I define my first agent?",
+            "How do I add tools to an agent?",
+            "How do I connect Better Agent to MCP tools?",
+            "Which provider package should I use?",
+        ],
+        loader: "shimmer-dots",
+    },
     nav: {
         title: "",
         url: "/",
