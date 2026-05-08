@@ -166,7 +166,7 @@ export default defineDocs({
             "How do I define my first agent?",
             "How do I add tools to an agent?",
             "How do I connect Better Agent to MCP tools?",
-            "How do I setup storage for my Better Agent app?"
+            "How do I setup storage for my Better Agent app?",
         ],
         loader: "shimmer-dots",
         feedback: false,
