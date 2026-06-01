@@ -161,6 +161,83 @@ describe("messages", () => {
         ]);
     });
 
+    test("attaches reasoning to the following assistant message", () => {
+        const messages = [
+            { id: "reasoning-1", role: "reasoning", content: "thinking" },
+            { id: "assistant-1", role: "assistant", content: "answer" },
+        ] as unknown as AgentMessage[];
+
+        expect(toAiSdkMessages(messages)).toEqual([
+            {
+                role: "assistant",
+                content: [
+                    { type: "reasoning", text: "thinking" },
+                    { type: "text", text: "answer" },
+                ],
+            },
+        ]);
+    });
+
+    test("preserves reasoning on assistant tool-call continuation turns", () => {
+        const messages = [
+            { id: "reasoning-1", role: "reasoning", content: "need a tool" },
+            {
+                id: "assistant-1",
+                role: "assistant",
+                toolCalls: [
+                    {
+                        id: "call-1",
+                        type: "function",
+                        function: { name: "search", arguments: '{"query":"docs"}' },
+                    },
+                ],
+            },
+            { id: "tool-1", role: "tool", toolCallId: "call-1", content: { ok: true } },
+        ] as unknown as AgentMessage[];
+
+        expect(toAiSdkMessages(messages)).toEqual([
+            {
+                role: "assistant",
+                content: [
+                    { type: "reasoning", text: "need a tool" },
+                    {
+                        type: "tool-call",
+                        toolCallId: "call-1",
+                        toolName: "search",
+                        input: { query: "docs" },
+                    },
+                ],
+            },
+            {
+                role: "tool",
+                content: [
+                    {
+                        type: "tool-result",
+                        toolCallId: "call-1",
+                        toolName: "search",
+                        output: { type: "json", value: { ok: true } },
+                    },
+                ],
+            },
+        ]);
+    });
+
+    test("does not attach reasoning across a new user message", () => {
+        const messages = [
+            { id: "reasoning-1", role: "reasoning", content: "stale" },
+            { id: "user-1", role: "user", content: "next question" },
+            { id: "assistant-1", role: "assistant", content: "answer" },
+        ] as unknown as AgentMessage[];
+
+        expect(toAiSdkMessages(messages)).toEqual([
+            { role: "user", content: "next question" },
+            {
+                role: "assistant",
+                content: [{ type: "text", text: "answer" }],
+            },
+        ]);
+    });
+
     test("splits system messages into the AI SDK system option", () => {
         const messages: AgentMessage[] = [
             { id: "system-1", role: "system", content: "system" },
