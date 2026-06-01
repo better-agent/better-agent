@@ -113,6 +113,7 @@ function sourcesToText(message: Extract<AgentMessage, { role: "assistant" }>): s
 export function toAiSdkMessages(messages: readonly AgentMessage[]): ModelMessage[] {
     const toolNamesByCallId = new Map<string, string>();
     const modelMessages: ModelMessage[] = [];
+    let pendingReasoning: string[] = [];
 
     for (const message of messages) {
         if (message.role === "assistant" && Array.isArray(message.toolCalls)) {
@@ -124,6 +125,7 @@ export function toAiSdkMessages(messages: readonly AgentMessage[]): ModelMessage
         switch (message.role) {
             case "system":
             case "developer":
+                pendingReasoning = [];
                 modelMessages.push({
                     role: "system",
                     content: textFromContent(message.content),
@@ -131,15 +133,26 @@ export function toAiSdkMessages(messages: readonly AgentMessage[]): ModelMessage
                 break;
 
             case "user":
+                pendingReasoning = [];
                 modelMessages.push({
                     role: "user",
                     content: toAiSdkUserContent(message.content),
                 });
                 break;
 
+            case "reasoning":
+                if (typeof message.content === "string" && message.content) {
+                    pendingReasoning.push(message.content);
+                }
+                break;
+
             case "assistant": {
                 const text = `${textFromContent(message.content)}${sourcesToText(message)}`;
                 const content = [
+                    ...pendingReasoning.map((reasoning) => ({
+                        type: "reasoning" as const,
+                        text: reasoning,
+                    })),
                     ...(text ? [{ type: "text" as const, text }] : []),
                     ...(message.toolCalls?.map((toolCall) => ({
                         type: "tool-call" as const,
@@ -153,6 +166,7 @@ export function toAiSdkMessages(messages: readonly AgentMessage[]): ModelMessage
                     role: "assistant",
                     content: content.length > 0 ? content : "",
                 });
+                pendingReasoning = [];
                 break;
             }
 
